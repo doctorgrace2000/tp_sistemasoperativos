@@ -1,0 +1,9 @@
+# binarios compilados
+*.o
+*.out
+bin/
+# logs generados en la demo
+logs/*.log
+# archivos temporales
+*.swp
+.DS_Store
