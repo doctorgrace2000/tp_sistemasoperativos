@@ -3,7 +3,8 @@
 *.out
 bin/
 # logs generados en la demo
-logs/*.log
+logs/*
+!logs/.gitkeep
 # archivos temporales
 *.swp
 .DS_Store

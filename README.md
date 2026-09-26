@@ -33,46 +33,74 @@ con capturas y apartado teórico.
 
 ## Estructura del proyecto
 
-El script principal es corto y solo llama a módulos, uno por ejercicio. Así cada pieza se puede
-mostrar y defender por separado, y cualquier integrante puede explicar cualquier parte.
+El orquestador es corto y solo llama a módulos, uno por ejercicio. Cada módulo vive en su propio
+archivo dentro de `src/`, así cada integrante trabaja en el suyo sin pisar a los demás y cualquier
+pieza se puede mostrar y defender por separado.
 
 ```
 tp_sistemasoperativos/
-├── README.md                      # este archivo
+├── README.md
+├── Makefile                       # compila los .c de src/modulos/ en bin/
 ├── docs/
 │   ├── TPO_Sistemas_Operativos_Propuesta.pdf   # propuesta original
-│   └── informe/                   # informe final (enunciado, solución, capturas y teoría)
-│       ├── 01_estructura_so.md
-│       ├── 02_procesos.md
-│       ├── 03_planificacion_cpu.md
-│       ├── 04_memoria.md
-│       ├── 05_almacenamiento.md
-│       ├── 06_seguridad.md
-│       └── capturas/              # screenshots de cada demo
-├── asignar.sh                     # orquestador: valida parámetros y llama a los módulos
-├── modulos/
-│   ├── 01_inventario.c            # Ej. 1 – recursos disponibles (/proc, syscalls)
-│   ├── 02_monitor.c               # Ej. 2 – control de procesos (renice / kill)
-│   ├── 03_cpu.sh                  # Ej. 3 – slice de systemd + CPUQuota
-│   ├── 03_carga_cpu.c             # Ej. 3 – carga de prueba para saturar CPU
-│   ├── 04_memoria.sh              # Ej. 4 – MemoryMax por departamento
-│   ├── 04_carga_ram.c             # Ej. 4 – malloc en loop para disparar el OOM killer
-│   ├── 05_almacenamiento.sh       # Ej. 5 – LVM + XFS + cuotas
-│   └── 06_seguridad.sh            # Ej. 6 – usuarios, permisos, ACL, sudo, SELinux
+│   └── informe/                   # informe final: un .md por ejercicio + capturas/
 ├── ejemplos/
 │   └── finanzas.csv               # CSV de usuarios de ejemplo (usuario,rol)
 ├── logs/
 │   └── asignador.log              # auditoría de cada acción (ignorado por git)
-└── Makefile                       # compila los .c de modulos/ en bin/
+└── src/
+    ├── asignar.sh                 # orquestador: valida parámetros y llama a los módulos
+    ├── lib/
+    │   └── log.sh                 # función log() compartida (escribe en logs/asignador.log)
+    └── modulos/
+        ├── 01_inventario.c        # Ej. 1 – recursos disponibles (/proc, syscalls)
+        ├── 02_monitor.c           # Ej. 2 – control de procesos (renice / kill)
+        ├── 03_cpu.sh              # Ej. 3 – slice de systemd + CPUQuota
+        ├── 03_carga_cpu.c         # Ej. 3 – carga de prueba que satura un núcleo
+        ├── 04_memoria.sh          # Ej. 4 – MemoryMax por departamento
+        ├── 04_carga_ram.c         # Ej. 4 – malloc en loop para disparar el OOM killer
+        ├── 05_almacenamiento.sh   # Ej. 5 – LVM + XFS + cuotas
+        └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo, SELinux
+```
+
+### Reparto de tareas
+
+Cada ejercicio es independiente: un archivo de código, un `.md` en `docs/informe/` y sus capturas.
+Cada archivo tiene en el encabezado el objetivo, las herramientas y una lista de `TODO` con los pasos.
+
+| Ejercicio | Archivos a completar | Responsable |
+|-----------|----------------------|-------------|
+| 1. Estructura del SO | `src/modulos/01_inventario.c`, `docs/informe/01_estructura_so.md` | |
+| 2. Procesos | `src/modulos/02_monitor.c`, `docs/informe/02_procesos.md` | |
+| 3. Planificación de CPU | `src/modulos/03_cpu.sh`, `03_carga_cpu.c`, `docs/informe/03_planificacion_cpu.md` | |
+| 4. Memoria | `src/modulos/04_memoria.sh`, `04_carga_ram.c`, `docs/informe/04_memoria.md` | |
+| 5. Almacenamiento | `src/modulos/05_almacenamiento.sh`, `docs/informe/05_almacenamiento.md` | |
+| 6. Seguridad | `src/modulos/06_seguridad.sh`, `docs/informe/06_seguridad.md` | |
+| Orquestador | `src/asignar.sh`, `src/lib/log.sh` | |
+
+### Cómo correr
+
+```bash
+make                                   # compila los .c en bin/
+sudo ./src/asignar.sh --depto finanzas --usuarios ejemplos/finanzas.csv \
+                      --disco 2G --cpu 30% --ram 512M
+tail -f logs/asignador.log             # auditoría
+```
+
+Cada módulo también se ejecuta solo, por ejemplo:
+
+```bash
+sudo ./src/modulos/05_almacenamiento.sh finanzas 2G
+./bin/01_inventario
 ```
 
 ### Flujo del asignador
 
 1. `asignar.sh` valida los parámetros (`--depto`, `--usuarios`, `--disco`, `--cpu`, `--ram`).
-2. Llama a cada módulo en orden: inventario → seguridad (usuarios y grupos) → almacenamiento →
+2. Llama a los módulos en orden: inventario → seguridad (grupo y usuarios) → almacenamiento →
    CPU → memoria → monitor.
-3. Cada módulo escribe en `logs/asignador.log` con fecha, acción y resultado.
-4. Cada módulo también puede ejecutarse solo, para que un error en uno no rompa la demo de los demás.
+3. Cada módulo escribe en `logs/asignador.log` con fecha, usuario, acción y resultado.
+4. Un error en un módulo no debe romper la demo de los demás.
 
 ## Cumplimiento de la consigna
 
