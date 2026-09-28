@@ -24,7 +24,8 @@ PUNTO="/srv/${DEPTO}"
 
 # TODO:
 #   [ ] groupadd "$DEPTO" (si no existe)
-#   [ ] leer el CSV línea por línea: useradd -m -G "$DEPTO" -s /bin/bash "$usuario"
+#   [ ] leer el CSV línea por línea: useradd -m -g "$DEPTO" -s /bin/bash "$usuario"
+#       (-g minúscula: grupo PRIMARIO = departamento, así `ps -G $DEPTO` del ej. 2 lo encuentra)
 #   [ ] chage -M 90 -d 0 "$usuario"  (vence en 90 días, cambiar clave al primer login)
 #   [ ] rol jefe:     sudoers.d/$DEPTO con permisos limitados (ej. systemctl status)
 #   [ ] rol auditor:  setfacl -m u:$usuario:rx "$PUNTO"  (solo lectura)

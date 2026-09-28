@@ -74,6 +74,8 @@ tp_sistemasoperativos/
 └── src/
     ├── asignar.sh                 # alta: valida parámetros y llama a los módulos
     ├── revocar.sh                 # baja: deshace asignar.sh en orden inverso
+    ├── demo/
+    │   └── simular_depto.sh       # crea grupo + usuarios del CSV para presentar un módulo solo
     ├── lib/
     │   └── log.sh                 # función log() compartida (escribe en logs/asignador.log)
     └── modulos/
@@ -111,7 +113,15 @@ tail -f logs/asignador.log             # auditoría
 sudo ./src/revocar.sh --depto finanzas # para repetir la demo desde cero
 ```
 
-Cada módulo también se ejecuta solo, por ejemplo:
+Cada módulo también se ejecuta solo. Para presentarlo sin correr el alta completa, primero se
+simula el departamento (grupo y usuarios del CSV, clave `pagosur`):
+
+```bash
+sudo ./src/demo/simular_depto.sh finanzas            # crea grupo + usuarios de ejemplos/finanzas.csv
+sudo ./src/demo/simular_depto.sh finanzas --borrar   # los elimina al terminar
+```
+
+y después el módulo que se quiera mostrar:
 
 ```bash
 sudo ./src/modulos/05_almacenamiento.sh finanzas 256M
