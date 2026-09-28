@@ -2,28 +2,36 @@
 # =============================================================================
 # 04_memoria.sh — Ejercicio 4: Memoria
 #
-# Objetivo: límite de RAM por departamento (MemoryMax en el slice) y
-# demostración del OOM killer sin afectar al resto del servidor.
+# Situación: un proceso de un usuario pide memoria sin parar y el servidor
+# empieza a swapear hasta que el OOM killer mata cualquier cosa. El admin
+# limita la memoria virtual que puede pedir cada proceso de los usuarios de
+# un departamento (1 GB). Al superarla, malloc falla solo en ese proceso y
+# el resto del servidor no se entera.
 #
-# Herramientas: systemctl set-property MemoryMax, free, vmstat, pmap,
-#               journalctl -k (mensajes del OOM killer), swap
-# Teoría:       memoria virtual, paginación, swapping, OOM killer.
+# Cómo: una línea en /etc/security/limits.d/ por grupo (límite "as",
+# address space, en KB). PAM la aplica en el login.
 #
-# Uso: 04_memoria.sh <depto> <ram>      ej: 04_memoria.sh finanzas 512M
-# Demo: lanzar bin/04_carga_ram dentro del slice; ver que muere por OOM y
-#       que el resto de los procesos siguen vivos.
+# Herramientas: limits.conf (pam_limits), ulimit -v, free, vmstat, pmap
+# Teoría:       memoria virtual, espacio de direcciones, paginación, swap,
+#               OOM killer.
+#
+# Uso:  04_memoria.sh <depto> [mb]     ej: 04_memoria.sh finanzas 1024
+# Demo: su - ana -c 'ulimit -v'                -> 1048576
+#       su - ana -c ./bin/04_carga_ram          -> "malloc: Cannot allocate memory"
+#                                                   al llegar a ~1 GB
+#       en otra terminal: free -h y vmstat 1 -> el servidor sigue normal
+#       pmap <pid> mientras corre -> ver cómo crece el espacio de direcciones
+#
+# TODO:
+#   [ ] escribir "@$DEPTO  hard  as  $((MB * 1024))" en "$ARCHIVO"
+#   [ ] verificar con: su - <usuario del depto> -c 'ulimit -v'
+#   [ ] loguear en logs/asignador.log
 # =============================================================================
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/log.sh"
 
 DEPTO="${1:?falta depto}"
-RAM="${2:?falta ram}"
-SLICE="depto-${DEPTO}.slice"
+MB="${2:-1024}"
+ARCHIVO="/etc/security/limits.d/depto-${DEPTO}-memoria.conf"
 
-# TODO:
-#   [ ] systemctl set-property "$SLICE" MemoryMax="$RAM" MemorySwapMax=0
-#   [ ] verificar: systemctl show "$SLICE" -p MemoryMax
-#   [ ] demo: systemd-run --slice="$SLICE" ../bin/04_carga_ram
-#   [ ] evidencia: journalctl -k | grep -i "out of memory"; free -h; vmstat 1
-
-log "MEMORIA: slice=$SLICE MemoryMax=$RAM (pendiente de implementar)"
+log "MEMORIA: grupo=@$DEPTO as=${MB}MB en $ARCHIVO (pendiente de implementar)"

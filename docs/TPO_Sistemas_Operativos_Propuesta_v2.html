@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Alta de departamentos en el servidor PagoSur</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; color: #1a1a1a; }
+  h1 { font-size: 20pt; margin: 0 0 2px; }
+  .sub { color: #555; margin: 0 0 18px; font-size: 10pt; }
+  h2 { font-size: 13.5pt; margin: 20px 0 6px; border-bottom: 1px solid #bbb; padding-bottom: 2px; }
+  h3 { font-size: 11pt; margin: 12px 0 4px; }
+  p { margin: 5px 0; }
+  pre { background: #f3f3f3; border: 1px solid #ddd; padding: 7px 9px; font-size: 9pt; line-height: 1.35; white-space: pre-wrap; margin: 6px 0; }
+  code { font-family: Menlo, monospace; font-size: 9pt; background: #f3f3f3; padding: 0 3px; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 9.2pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: top; text-align: left; }
+  th { background: #e9e9e9; }
+  ul { margin: 4px 0 4px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  .box { border: 1px solid #bbb; background: #fafafa; padding: 8px 10px; margin: 8px 0; }
+  .pb { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>Alta de departamentos en el servidor PagoSur</h1>
+<p class="sub">Sistemas Operativos · TP Obligatorio · Propuesta (versión 2, reformulada)</p>
+
+<h2>La idea</h2>
+<p>Una máquina Red Hat es el servidor central de <b>PagoSur</b>, una fintech ficticia. Funciona como
+repositorio de archivos de la empresa: cada departamento tiene su carpeta, sus usuarios y su espacio.
+Cuando se incorpora un departamento nuevo, el administrador ejecuta un script de <i>alta</i> que crea el
+grupo y los usuarios, la carpeta con cuota de disco, los permisos por rol, y las reglas que evitan que un
+proceso de esos usuarios tumbe el servidor. Todo queda registrado en un log de auditoría.</p>
+<pre><code>sudo ./asignar.sh --depto finanzas --usuarios finanzas.csv</code></pre>
+<p>Todo departamento recibe lo mismo, definido como constantes en el script: <b>120 GB de disco</b>,
+sus procesos con <b>prioridad baja (nice 10)</b> y hasta <b>1 GB de memoria virtual por proceso</b>.
+Cuando el departamento se disuelve, <code>revocar.sh</code> deshace todo en orden inverso.</p>
+<p>El servidor es el escenario común, pero la consigna exige 6 ejercicios de unidades distintas. Por eso
+cada pieza del alta es un ejercicio independiente, con su propia situación, su solución con capturas y su
+apartado teórico.</p>
+
+<h2>Qué cambió respecto de la propuesta original y por qué</h2>
+<div class="box">
+<p>La propuesta original repartía CPU y RAM por departamento con <i>slices</i> de systemd (cgroups).
+Al revisarla contra las consignas y el programa de la materia se decidió simplificar:</p>
+<ul>
+<li><b>La consigna no exige ninguna herramienta concreta.</b> Exige 6 ejercicios de unidades distintas,
+consola de Red Hat, scripting en al menos 3, y que <b>cualquiera de los 4 integrantes pueda defender
+cualquier ejercicio</b> con la teoría de su unidad (puntos 6 y 16).</li>
+<li><b>cgroups no está en el programa.</b> Y un slice por departamento no captura automáticamente los
+procesos de un usuario que se loguea: había que lanzarlos a mano con <code>systemd-run</code>. Difícil de
+explicar y fácil de que falle en la defensa.</li>
+<li><b>Los límites de CPU y memoria ahora se aplican con <code>limits.conf</code></b>, que PAM activa en el
+login de cada usuario del grupo. Una línea por departamento, sin nada que lanzar. Es material clásico de
+las unidades de planificación y memoria.</li>
+<li><b>El único recurso que se reparte de verdad <i>por departamento</i> es el disco</b>, con una cuota de
+proyecto de XFS sobre la carpeta. CPU y memoria son reglas <i>por proceso</i> de los usuarios del grupo,
+pensadas para proteger al servidor. Se explica así en el informe.</li>
+<li>El monitor de procesos pasa de C a bash (la propuesta ya decía "C o script"), y SELinux se reduce a
+una demostración en vez de configuración en el script.</li>
+</ul>
+</div>
+
+<h2 class="pb">Los 6 ejercicios</h2>
+<table>
+<tr><th style="width:12%">Ejercicio</th><th style="width:33%">Situación y qué hace</th><th style="width:25%">Herramientas Red Hat</th><th style="width:11%">Código</th><th>Teoría</th></tr>
+<tr><td>1. Estructura del SO</td>
+<td>Antes de dar de alta un departamento, el admin quiere saber en qué estado está el servidor. El
+inventario lee <code>/proc</code> y reporta CPUs y carga (¿hay contención?), RAM disponible (¿cuántos
+procesos de 1 GB entran?) y discos.</td>
+<td><code>/proc/cpuinfo</code>, <code>/proc/loadavg</code>, <code>/proc/meminfo</code>,
+<code>/proc/partitions</code>, <code>strace</code>, <code>lscpu</code>, <code>free</code></td>
+<td>C</td><td>Syscalls, modo usuario / kernel, <code>/proc</code></td></tr>
+<tr><td>2. Procesos</td>
+<td>Un usuario deja un proceso colgado consumiendo CPU y se va. El monitor recorre los procesos de los
+usuarios del departamento, baja la prioridad al que supera el umbral y, si reincide, lo termina. Reporta
+zombies.</td>
+<td><code>ps</code>, <code>top</code>, <code>pstree</code>, <code>renice</code>, <code>kill</code></td>
+<td>Script</td><td>Estados, PCB, señales, zombies</td></tr>
+<tr><td>3. Planificación de CPU</td>
+<td>Un cálculo pesado de un analista pone lento el servidor para todos. Los procesos de los usuarios del
+departamento arrancan con nice 10, así el planificador prioriza al resto. Demo: dos cargas en C, una
+como usuario y otra como root, y <code>top</code> mostrando el reparto.</td>
+<td><code>limits.conf</code>, <code>nice</code>, <code>renice</code>, <code>top</code>, <code>chrt</code></td>
+<td>Script + C (carga)</td><td>Planificador, prioridades, CFS, quantum</td></tr>
+<tr><td>4. Memoria</td>
+<td>Un proceso pide memoria sin parar hasta que el servidor swapea. Ningún proceso de un usuario del
+departamento puede pedir más de 1 GB: <code>malloc</code> falla solo en ese proceso y el servidor sigue
+normal.</td>
+<td><code>limits.conf</code>, <code>ulimit -v</code>, <code>free</code>, <code>vmstat</code>, <code>pmap</code></td>
+<td>Script + C (malloc en loop)</td><td>Memoria virtual, paginación, swap, OOM killer</td></tr>
+<tr><td>5. Almacenamiento</td>
+<td>Cada departamento necesita su carpeta con un tope de 120 GB que no pueda superar, y que se pueda
+agrandar a demanda. Volumen lógico XFS sobre un loop device, montaje persistente y cuota de proyecto.
+<code>lvextend</code> a mano en la demo.</td>
+<td><code>losetup</code>, <code>pvcreate</code>, <code>vgcreate</code>, <code>lvcreate</code>,
+<code>mkfs.xfs</code>, <code>fstab</code>, <code>xfs_quota</code>, <code>lvextend</code></td>
+<td>Script</td><td>Sistemas de archivos, inodos, journaling, LVM</td></tr>
+<tr><td>6. Seguridad</td>
+<td>Alta de usuarios desde un CSV con rol (jefe, analista, auditor): grupo del departamento, carpeta
+con SGID, auditor de solo lectura por ACL, sudo limitado para el jefe, clave que vence. SELinux como
+ejemplo de MAC en la demo.</td>
+<td><code>useradd</code>, <code>groupadd</code>, <code>chage</code>, <code>chmod</code>, SGID,
+<code>setfacl</code>, <code>sudoers</code>, <code>ls -Z</code>, <code>restorecon</code></td>
+<td>Script</td><td>DAC vs MAC, mínimo privilegio</td></tr>
+</table>
+
+<h2 class="pb">Cómo funciona de punta a punta</h2>
+
+<h3>1. Alta (el admin, una vez por departamento)</h3>
+<pre><code>sudo ./asignar.sh --depto finanzas --usuarios finanzas.csv</code></pre>
+<p>El orquestador valida los dos parámetros, muestra el estado del servidor y llama a los módulos en este
+orden, porque cada uno depende del anterior:</p>
+<table>
+<tr><th style="width:5%">#</th><th style="width:22%">Módulo</th><th>Qué deja en el sistema</th></tr>
+<tr><td>1</td><td><code>01_inventario</code></td><td>Imprime CPUs y carga, RAM disponible y discos. No cambia nada.</td></tr>
+<tr><td>6</td><td><code>06_seguridad.sh</code></td><td>Grupo <code>finanzas</code>. Usuarios del CSV con clave a cambiar en el primer login y vencimiento a 90 días. <code>/etc/sudoers.d/finanzas</code> para el jefe.</td></tr>
+<tr><td>5</td><td><code>05_almacenamiento.sh</code></td><td>LV <code>/dev/vg_pagosur/lv_finanzas</code> de 120 GB en XFS, montado en <code>/srv/finanzas</code> vía fstab con <code>pquota</code>. Carpeta <code>root:finanzas</code> modo <code>2770</code>. ACL de solo lectura para el auditor. Cuota de proyecto de 120 GB.</td></tr>
+<tr><td>3</td><td><code>03_cpu.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-cpu.conf</code> con <code>@finanzas - priority 10</code>.</td></tr>
+<tr><td>4</td><td><code>04_memoria.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-memoria.conf</code> con <code>@finanzas hard as 1048576</code>.</td></tr>
+</table>
+<p>Cada módulo escribe una línea en <code>logs/asignador.log</code> con fecha, usuario y acción.</p>
+
+<h3>2. Uso (los usuarios del departamento, todos los días)</h3>
+<p>No hay nada que "acceder" ni configurar del lado del usuario. Entra con <code>ssh</code> o
+<code>su - ana</code> y en ese login PAM le aplica los límites del grupo:</p>
+<pre><code>su - ana                                  # analista de finanzas
+nice                                      # -> 10       (ej. 3: menor prioridad)
+ulimit -v                                 # -> 1048576  (ej. 4: máx. 1 GB/proceso)
+cd /srv/finanzas &amp;&amp; cp ~/informe.pdf .    # su carpeta; hereda el grupo por SGID
+su - auditor1 -c "touch /srv/finanzas/x"  # falla: el auditor solo lee (ACL, ej. 6)
+dd if=/dev/zero of=/srv/finanzas/relleno bs=1M   # corta en 120 GB (cuota, ej. 5)</code></pre>
+
+<h3>3. Vigilancia (ej. 2, en su propia terminal)</h3>
+<pre><code>sudo ./modulos/02_monitor.sh finanzas 50      # umbral 50 % de CPU
+# en otra terminal, como ana:  ./bin/03_carga_cpu
+# el monitor lo detecta, le hace renice, y si sigue, kill -TERM / kill -KILL</code></pre>
+
+<h3>4. Baja (cuando el departamento se disuelve)</h3>
+<pre><code>sudo ./revocar.sh --depto finanzas</code></pre>
+<p>Pide confirmación y deshace todo en orden inverso: borra los archivos de <code>limits.d</code>,
+desmonta y elimina el volumen y su entrada en fstab, y por último elimina usuarios, grupo y sudoers.
+Sirve para repetir la demo desde cero.</p>
+
+<h2 class="pb">Arquitectura</h2>
+<pre><code>src/
+├── asignar.sh                 # alta: valida parámetros y llama a los módulos
+├── revocar.sh                 # baja: deshace asignar.sh en orden inverso
+├── lib/log.sh                 # log() compartida -> logs/asignador.log
+└── modulos/
+    ├── 01_inventario.c        # Ej. 1 – estado del servidor (/proc, syscalls)
+    ├── 02_monitor.sh          # Ej. 2 – control de procesos (ps / renice / kill)
+    ├── 03_cpu.sh              # Ej. 3 – nice por grupo vía limits.d
+    ├── 03_carga_cpu.c         # Ej. 3 – carga de prueba que satura un núcleo
+    ├── 04_memoria.sh          # Ej. 4 – memoria máxima por proceso vía limits.d
+    ├── 04_carga_ram.c         # Ej. 4 – malloc en loop hasta que falla
+    ├── 05_almacenamiento.sh   # Ej. 5 – loop device + LVM + XFS + cuota de proyecto
+    └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo</code></pre>
+<p>El orquestador es corto y no contiene lógica de los ejercicios. Cada módulo vive en su propio archivo,
+se ejecuta solo, y tiene en el encabezado la situación, las herramientas, la demo y una lista de pasos.
+Así cada integrante trabaja en el suyo y cualquier pieza se puede mostrar y defender por separado.</p>
+
+<h2>Cumplimiento de la consigna</h2>
+<table>
+<tr><th style="width:38%">Requisito</th><th>Cómo se cumple</th></tr>
+<tr><td>6 ejercicios, uno por unidad (punto 4)</td><td>Cada módulo es un ejercicio con su unidad.</td></tr>
+<tr><td>Consola de Red Hat en todos (punto 10)</td><td>Todos se resuelven y demuestran por terminal.</td></tr>
+<tr><td>Shell scripting en al menos 3 (punto 14)</td><td>Ejercicios 2, 3, 4, 5, 6 y el orquestador.</td></tr>
+<tr><td>C/C++, valorado (punto 15)</td><td>Ejercicio 1 (inventario) y las cargas de prueba de 3 y 4.</td></tr>
+<tr><td>Enunciado hipotético creativo (puntos 8 y 13)</td><td>Escenario de empresa único; cada ejercicio arranca con una situación de una oración.</td></tr>
+<tr><td>Apartado teórico por ejercicio (punto 11)</td><td>Columna "Teoría" de la tabla como punto de partida.</td></tr>
+<tr><td>Cualquiera defiende cualquier ejercicio (puntos 6 y 16)</td><td>Módulos mínimos, sin herramientas fuera del programa. Cada informe cierra con preguntas de la unidad y sus respuestas, tomadas de los cuestionarios.</td></tr>
+</table>
+
+<h2>Consideraciones técnicas</h2>
+<ul>
+<li><b>Discos:</b> siempre un archivo disperso montado como loop device (<code>truncate -s 500G</code> +
+<code>losetup</code>), nunca discos reales. Declara 500 GB pero ocupa solo lo escrito. Snapshot de la VM antes de tocar LVM.</li>
+<li><b>Cuota de proyecto en XFS:</b> el volumen debe montarse con <code>pquota</code>; si no, <code>xfs_quota</code> no tiene efecto.</li>
+<li><b>limits.conf:</b> los límites se aplican en el login (PAM). Para probarlos hay que entrar con
+<code>su - usuario</code> (con guion) o <code>ssh</code>; un <code>su usuario</code> sin guion no los carga.</li>
+<li><b>Límite por proceso, no por departamento:</b> el nice y el 1 GB aplican a cada proceso de cada usuario
+del grupo. Un usuario con diez procesos usa diez veces eso. Es una limitación conocida y se explica en el
+informe; la cuota de disco sí es por departamento.</li>
+<li><b>Entorno del lab:</b> verificar si se resetea entre sesiones. Todo vive en el repositorio para reconstruir rápido.</li>
+<li><b>Independencia:</b> cada ejercicio debe poder demostrarse solo; un error en uno no rompe la demo de los demás.</li>
+</ul>
+
+</body>
+</html>

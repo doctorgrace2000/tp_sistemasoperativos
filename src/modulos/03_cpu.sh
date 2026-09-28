@@ -2,27 +2,34 @@
 # =============================================================================
 # 03_cpu.sh — Ejercicio 3: Planificación de CPU
 #
-# Objetivo: asignar un porcentaje de CPU al departamento mediante un slice
-# de systemd (cgroups v2) con CPUQuota.
+# Situación: un analista de finanzas deja corriendo un cálculo pesado y el
+# resto de los usuarios nota el servidor lento. El admin decide que todos los
+# procesos de los usuarios de un departamento arranquen con menor prioridad
+# (nice 10), así el planificador les da CPU solo cuando nadie más la necesita.
 #
-# Herramientas: systemctl set-property, systemd-run, top, nice, chrt
-# Teoría:       algoritmos de scheduling, CFS, prioridades y nice.
+# Cómo: una línea en /etc/security/limits.d/ por grupo. PAM la aplica en el
+# login de cualquier usuario del grupo, sin que el usuario haga nada.
 #
-# Uso: 03_cpu.sh <depto> <cpu%>      ej: 03_cpu.sh finanzas 30%
-# Demo: lanzar bin/03_carga_cpu dentro del slice y verificar en top que no
-#       supera el porcentaje asignado.
+# Herramientas: limits.conf (pam_limits), nice, renice, top, chrt
+# Teoría:       planificador, prioridades y nice, CFS, quantum, apropiación.
+#
+# Uso:  03_cpu.sh <depto> [nice]      ej: 03_cpu.sh finanzas 10
+# Demo: su - ana -c 'nice'                     -> imprime 10
+#       su - ana -c ./bin/03_carga_cpu &       (usuario de finanzas)
+#       ./bin/03_carga_cpu &                   (root, nice 0)
+#       top  -> columna NI y %CPU: con un solo núcleo, root se lleva casi todo.
+#       Sin el límite, los dos se reparten 50/50: eso es lo que se compara.
+#
+# TODO:
+#   [ ] escribir "@$DEPTO  -  priority  $NICE" en "$ARCHIVO"
+#   [ ] verificar con: su - <usuario del depto> -c nice
+#   [ ] loguear en logs/asignador.log
 # =============================================================================
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/log.sh"
 
 DEPTO="${1:?falta depto}"
-CPU="${2:?falta cpu%}"
-SLICE="depto-${DEPTO}.slice"
+NICE="${2:-10}"
+ARCHIVO="/etc/security/limits.d/depto-${DEPTO}-cpu.conf"
 
-# TODO:
-#   [ ] crear el slice: systemctl set-property "$SLICE" CPUQuota="$CPU"
-#   [ ] verificar: systemctl show "$SLICE" -p CPUQuotaPerSecUSec
-#   [ ] demo: systemd-run --slice="$SLICE" --uid=<usuario> ../bin/03_carga_cpu
-#   [ ] comparar con nice/chrt sobre un proceso fuera del slice
-
-log "CPU: slice=$SLICE CPUQuota=$CPU (pendiente de implementar)"
+log "CPU: grupo=@$DEPTO priority=$NICE en $ARCHIVO (pendiente de implementar)"

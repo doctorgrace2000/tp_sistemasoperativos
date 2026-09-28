@@ -3,11 +3,12 @@
 # 06_seguridad.sh — Ejercicio 6: Seguridad
 #
 # Objetivo: alta de usuarios desde un CSV, grupo por departamento, permisos
-# por rol, un auditor de solo lectura (ACL), sudo limitado y contexto SELinux
-# sobre el directorio del departamento.
+# por rol, un auditor de solo lectura (ACL) y sudo limitado para el jefe.
+# SELinux se muestra en la demo (getenforce, ls -Z) y se explica en la teoría
+# como ejemplo de MAC; en el script es una sola línea.
 #
 # Herramientas: useradd, groupadd, chage, chmod, SGID, setfacl, getfacl,
-#               /etc/sudoers.d, semanage fcontext, restorecon
+#               /etc/sudoers.d, ls -Z, restorecon
 # Teoría:       DAC vs MAC, principio de mínimo privilegio.
 #
 # Uso: 06_seguridad.sh <depto> <usuarios.csv>
@@ -28,7 +29,7 @@ PUNTO="/srv/${DEPTO}"
 #   [ ] rol jefe:     sudoers.d/$DEPTO con permisos limitados (ej. systemctl status)
 #   [ ] rol auditor:  setfacl -m u:$usuario:rx "$PUNTO"  (solo lectura)
 #   [ ] SGID en "$PUNTO" para que los archivos hereden el grupo del depto
-#   [ ] semanage fcontext -a -t <tipo> "$PUNTO(/.*)?" && restorecon -Rv "$PUNTO"
+#   [ ] SELinux (una línea): restorecon -Rv "$PUNTO" y mostrar ls -Z "$PUNTO" en la demo
 #   [ ] loguear cada alta en logs/asignador.log
 
 log "SEGURIDAD: grupo=$DEPTO csv=$CSV (pendiente de implementar)"

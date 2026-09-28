@@ -1,8 +1,9 @@
 /*
  * 03_carga_cpu.c — carga de prueba para el Ejercicio 3
  *
- * Bucle infinito que consume CPU al 100 % de un núcleo. Se lanza dentro
- * del slice del departamento para demostrar que CPUQuota lo limita.
+ * Bucle infinito que consume CPU al 100 % de un núcleo. Se lanza como un
+ * usuario del departamento (nice 10 por limits.conf) y como root (nice 0)
+ * para ver en top cómo el planificador reparte la CPU según la prioridad.
  *
  * Uso: ./bin/03_carga_cpu [segundos]   (por defecto corre hasta Ctrl+C)
  */

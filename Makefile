@@ -4,7 +4,7 @@ CFLAGS  = -Wall -Wextra -O2
 SRC     = src/modulos
 BIN     = bin
 
-PROGS   = $(BIN)/01_inventario $(BIN)/02_monitor $(BIN)/03_carga_cpu $(BIN)/04_carga_ram
+PROGS   = $(BIN)/01_inventario $(BIN)/03_carga_cpu $(BIN)/04_carga_ram
 
 all: $(BIN) $(PROGS)
 

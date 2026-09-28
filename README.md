@@ -1,35 +1,56 @@
 # TP Obligatorio – Sistemas Operativos
 
-**Servidor simulado con asignador de recursos**
+**Alta de departamentos en el servidor PagoSur**
 
-Propuesta completa: [`docs/TPO_Sistemas_Operativos_Propuesta.pdf`](docs/TPO_Sistemas_Operativos_Propuesta.pdf)
+Consignas oficiales: [`docs/Consignas_TPO.pdf`](docs/Consignas_TPO.pdf)
+Propuesta vigente (v2): [`docs/TPO_Sistemas_Operativos_Propuesta_v2.pdf`](docs/TPO_Sistemas_Operativos_Propuesta_v2.pdf)
+Propuesta original: [`docs/TPO_Sistemas_Operativos_Propuesta.pdf`](docs/TPO_Sistemas_Operativos_Propuesta.pdf)
+(la v2 la simplifica; el porqué está en la sección "Qué cambió" del PDF y en "Criterio de diseño" abajo).
 
 ## La idea
 
-Una máquina Red Hat simula ser el servidor central de una empresa ficticia (**PagoSur**, una fintech).
-Cada vez que se incorpora un departamento o proyecto nuevo, el administrador ejecuta un *asignador*
-que crea usuarios, espacio en disco con cuota, límites de CPU y memoria, permisos y reglas de
-seguridad, dejando todo registrado en un log de auditoría.
+Una máquina Red Hat es el servidor central de **PagoSur**, una fintech ficticia. Funciona como
+repositorio de archivos de la empresa: cada departamento tiene su carpeta, sus usuarios y su
+espacio. Cuando se incorpora un departamento nuevo, el administrador ejecuta un script de *alta*
+que crea el grupo y los usuarios, la carpeta con cuota de disco, los permisos por rol, y las reglas
+que evitan que un proceso de esos usuarios tumbe el servidor. Todo queda en un log de auditoría.
 
 ```bash
-./asignar.sh --depto finanzas --usuarios finanzas.csv \
-             --disco 2G --cpu 30% --ram 512M
+./asignar.sh --depto finanzas --usuarios finanzas.csv
 ```
 
+Todo departamento recibe lo mismo, definido como constantes en `asignar.sh`: 120 GB de disco,
+sus procesos con prioridad baja (nice 10) y hasta 1 GB de memoria virtual por proceso.
+Cuando el departamento se disuelve, `revocar.sh` deshace todo en orden inverso.
+
 El servidor es el escenario común, pero la consigna exige **6 ejercicios de unidades distintas**.
-Por eso cada pieza del asignador es un ejercicio independiente, con su propio enunciado, solución
-con capturas y apartado teórico.
+Por eso cada pieza del alta es un ejercicio independiente, con su propia situación, su solución
+con capturas y su apartado teórico.
+
+### Criterio de diseño
+
+La consigna no exige ninguna herramienta concreta. Exige 6 ejercicios de unidades distintas,
+consola de Red Hat, scripting en al menos 3, y que **cualquiera de los 4 integrantes pueda
+defender cualquier ejercicio** con la teoría de su unidad (puntos 6 y 16). Por eso:
+
+- Cada módulo se mantiene en la versión más simple que cumpla su objetivo; lo accesorio se
+  muestra a mano en la demo.
+- No se usan cgroups ni slices de systemd (no están en el programa de la materia). Los límites de
+  CPU y memoria se aplican con `limits.conf`, que PAM activa en el login de cada usuario del grupo.
+- El único recurso que se reparte de verdad *por departamento* es el disco, con una cuota de
+  proyecto de XFS sobre la carpeta. CPU y memoria son reglas *por proceso* de los usuarios del
+  grupo, pensadas para proteger al servidor, y así se explica en el informe.
 
 ## Los 6 ejercicios
 
-| # | Ejercicio | Qué hace | Herramientas Red Hat | Código | Teoría |
-|---|-----------|----------|----------------------|--------|--------|
-| 1 | Estructura del SO | Inventario del servidor: reporta los recursos totales disponibles para repartir | `/proc/cpuinfo`, `/proc/meminfo`, `strace`, `lscpu` | C | Syscalls, modo usuario/kernel, `/proc` |
-| 2 | Procesos | Monitor que detecta procesos que exceden lo asignado y los baja de prioridad o los termina | `ps`, `top`, `pstree`, `renice`, `kill`, `/proc/<PID>/stat` | C o script | Estados, PCB, señales, zombies |
-| 3 | Planificación de CPU | Asigna % de CPU por departamento con slices de systemd (cgroups) | `systemctl set-property ... CPUQuota=30%`, `top`, `nice`, `chrt` | C (carga de prueba) | Algoritmos de scheduling, CFS |
-| 4 | Memoria | Límite de RAM por departamento; se demuestra el OOM killer sin afectar al resto | `MemoryMax`, `free`, `vmstat`, `pmap`, `journalctl`, swap | C (malloc en loop) | Memoria virtual, paginación, swapping |
-| 5 | Almacenamiento | Un volumen lógico por departamento, montaje persistente y cuotas por usuario; extensión a demanda | `fdisk`, `pvcreate`, `vgcreate`, `lvcreate`, `lvextend`, `mkfs.xfs`, `fstab`, `xfs_quota` | Script | Sistemas de archivos, inodos, journaling |
-| 6 | Seguridad | Alta de usuarios desde CSV, permisos por rol, auditor de solo lectura, sudo limitado, SELinux | `useradd`, `groupadd`, `chage`, `chmod`, SGID, `setfacl`, `sudoers`, `semanage`, `restorecon` | Script | DAC vs MAC, mínimo privilegio |
+| # | Ejercicio | Situación y qué hace | Herramientas Red Hat | Código | Teoría |
+|---|-----------|----------------------|----------------------|--------|--------|
+| 1 | Estructura del SO | Inventario del servidor: CPUs, carga, RAM, swap y discos, leyendo `/proc` | `/proc/cpuinfo`, `/proc/loadavg`, `/proc/meminfo`, `/proc/partitions`, `strace`, `lscpu`, `free` | C | Syscalls, modo usuario/kernel, `/proc` |
+| 2 | Procesos | Un usuario deja un proceso colgado consumiendo CPU. El monitor lo detecta, le baja la prioridad y si reincide lo termina; reporta zombies | `ps`, `top`, `pstree`, `renice`, `kill` | Script | Estados, PCB, señales, zombies |
+| 3 | Planificación de CPU | Los procesos de los usuarios del departamento arrancan con nice 10, así el planificador prioriza al resto | `limits.conf`, `nice`, `renice`, `top`, `chrt` | Script + C (carga de prueba) | Planificador, prioridades, CFS, quantum |
+| 4 | Memoria | Ningún proceso de un usuario del departamento puede pedir más de 1 GB; `malloc` falla solo en ese proceso y el servidor sigue | `limits.conf`, `ulimit -v`, `free`, `vmstat`, `pmap` | Script + C (malloc en loop) | Memoria virtual, paginación, swap, OOM killer |
+| 5 | Almacenamiento | Carpeta del departamento sobre un volumen lógico XFS, montaje persistente y cuota de proyecto de 120 GB; extensión a demanda a mano | `losetup`, `pvcreate`, `vgcreate`, `lvcreate`, `mkfs.xfs`, `fstab`, `xfs_quota`, `lvextend` | Script | Sistemas de archivos, inodos, journaling, LVM |
+| 6 | Seguridad | Alta de usuarios desde CSV, grupo por departamento, permisos por rol, auditor de solo lectura, sudo limitado; SELinux como ejemplo de MAC en la demo | `useradd`, `groupadd`, `chage`, `chmod`, SGID, `setfacl`, `sudoers`, `ls -Z`, `restorecon` | Script | DAC vs MAC, mínimo privilegio |
 
 ## Estructura del proyecto
 
@@ -42,63 +63,68 @@ tp_sistemasoperativos/
 ├── README.md
 ├── Makefile                       # compila los .c de src/modulos/ en bin/
 ├── docs/
+│   ├── Consignas_TPO.pdf          # consignas oficiales
 │   ├── TPO_Sistemas_Operativos_Propuesta.pdf   # propuesta original
+│   ├── TPO_Sistemas_Operativos_Propuesta_v2.pdf # propuesta vigente (+ .html fuente)
 │   └── informe/                   # informe final: un .md por ejercicio + capturas/
 ├── ejemplos/
 │   └── finanzas.csv               # CSV de usuarios de ejemplo (usuario,rol)
 ├── logs/
 │   └── asignador.log              # auditoría de cada acción (ignorado por git)
 └── src/
-    ├── asignar.sh                 # orquestador: valida parámetros y llama a los módulos
+    ├── asignar.sh                 # alta: valida parámetros y llama a los módulos
+    ├── revocar.sh                 # baja: deshace asignar.sh en orden inverso
     ├── lib/
     │   └── log.sh                 # función log() compartida (escribe en logs/asignador.log)
     └── modulos/
-        ├── 01_inventario.c        # Ej. 1 – recursos disponibles (/proc, syscalls)
-        ├── 02_monitor.c           # Ej. 2 – control de procesos (renice / kill)
-        ├── 03_cpu.sh              # Ej. 3 – slice de systemd + CPUQuota
+        ├── 01_inventario.c        # Ej. 1 – recursos del servidor (/proc, syscalls)
+        ├── 02_monitor.sh          # Ej. 2 – control de procesos (ps / renice / kill)
+        ├── 03_cpu.sh              # Ej. 3 – nice por grupo vía limits.d
         ├── 03_carga_cpu.c         # Ej. 3 – carga de prueba que satura un núcleo
-        ├── 04_memoria.sh          # Ej. 4 – MemoryMax por departamento
-        ├── 04_carga_ram.c         # Ej. 4 – malloc en loop para disparar el OOM killer
-        ├── 05_almacenamiento.sh   # Ej. 5 – LVM + XFS + cuotas
-        └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo, SELinux
+        ├── 04_memoria.sh          # Ej. 4 – memoria máxima por proceso vía limits.d
+        ├── 04_carga_ram.c         # Ej. 4 – malloc en loop hasta que falla
+        ├── 05_almacenamiento.sh   # Ej. 5 – loop device + LVM + XFS + cuota de proyecto
+        └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo
 ```
 
 ### Reparto de tareas
 
 Cada ejercicio es independiente: un archivo de código, un `.md` en `docs/informe/` y sus capturas.
-Cada archivo tiene en el encabezado el objetivo, las herramientas y una lista de `TODO` con los pasos.
+Cada archivo tiene en el encabezado la situación, las herramientas, la demo y una lista de `TODO`.
 
 | Ejercicio | Archivos a completar | Responsable |
 |-----------|----------------------|-------------|
 | 1. Estructura del SO | `src/modulos/01_inventario.c`, `docs/informe/01_estructura_so.md` | |
-| 2. Procesos | `src/modulos/02_monitor.c`, `docs/informe/02_procesos.md` | |
+| 2. Procesos | `src/modulos/02_monitor.sh`, `docs/informe/02_procesos.md` | |
 | 3. Planificación de CPU | `src/modulos/03_cpu.sh`, `03_carga_cpu.c`, `docs/informe/03_planificacion_cpu.md` | |
 | 4. Memoria | `src/modulos/04_memoria.sh`, `04_carga_ram.c`, `docs/informe/04_memoria.md` | |
 | 5. Almacenamiento | `src/modulos/05_almacenamiento.sh`, `docs/informe/05_almacenamiento.md` | |
 | 6. Seguridad | `src/modulos/06_seguridad.sh`, `docs/informe/06_seguridad.md` | |
-| Orquestador | `src/asignar.sh`, `src/lib/log.sh` | |
+| Orquestador | `src/asignar.sh`, `src/revocar.sh`, `src/lib/log.sh` | |
 
 ### Cómo correr
 
 ```bash
 make                                   # compila los .c en bin/
-sudo ./src/asignar.sh --depto finanzas --usuarios ejemplos/finanzas.csv \
-                      --disco 2G --cpu 30% --ram 512M
+sudo ./src/asignar.sh --depto finanzas --usuarios ejemplos/finanzas.csv
 tail -f logs/asignador.log             # auditoría
+sudo ./src/revocar.sh --depto finanzas # para repetir la demo desde cero
 ```
 
 Cada módulo también se ejecuta solo, por ejemplo:
 
 ```bash
-sudo ./src/modulos/05_almacenamiento.sh finanzas 2G
+sudo ./src/modulos/05_almacenamiento.sh finanzas 120G
+sudo ./src/modulos/02_monitor.sh finanzas 50
 ./bin/01_inventario
 ```
 
-### Flujo del asignador
+### Flujo del alta
 
-1. `asignar.sh` valida los parámetros (`--depto`, `--usuarios`, `--disco`, `--cpu`, `--ram`).
+1. `asignar.sh` valida `--depto` y `--usuarios`. Los valores son fijos: `DISCO=120G`, `NICE=10`,
+   `RAM_MB=1024`.
 2. Llama a los módulos en orden: inventario → seguridad (grupo y usuarios) → almacenamiento →
-   CPU → memoria → monitor.
+   CPU → memoria. El monitor (ej. 2) no se lanza desde acá: se demuestra solo en su terminal.
 3. Cada módulo escribe en `logs/asignador.log` con fecha, usuario, acción y resultado.
 4. Un error en un módulo no debe romper la demo de los demás.
 
@@ -108,16 +134,20 @@ sudo ./src/modulos/05_almacenamiento.sh finanzas 2G
 |-----------|----------------|
 | 6 ejercicios, uno por unidad | Cada módulo es un ejercicio con su unidad |
 | Consola de Red Hat en todos | Todos se resuelven y demuestran por terminal |
-| Shell scripting en al menos 3 | Ejercicios 5, 6 y el orquestador (3 y 4 también) |
-| C/C++ (valorado) | Ejercicios 1, 2, 3 y 4 |
-| Enunciado hipotético creativo | Escenario de empresa único que da coherencia al TP |
+| Shell scripting en al menos 3 | Ejercicios 2, 3, 4, 5, 6 y el orquestador |
+| C/C++ (valorado) | Ejercicio 1 (inventario) y las cargas de prueba de 3 y 4 |
+| Enunciado hipotético creativo | Escenario de empresa único; cada ejercicio arranca con una situación de una oración |
 | Apartado teórico por ejercicio | Columna "Teoría" de la tabla como punto de partida |
+| Cualquiera defiende cualquier ejercicio | Módulos mínimos; cada `.md` del informe cierra con preguntas de la unidad y sus respuestas |
 
 ## Consideraciones técnicas
 
-- **Discos:** si la VM no tiene discos extra, se simulan con archivos y loop devices (`dd` + `losetup`)
-  y se arma el volume group encima.
-- **Cuotas en XFS:** el volumen debe montarse con `uquota` o `pquota`; si no, `xfs_quota` no tiene efecto.
+- **Discos:** siempre un archivo disperso montado como loop device (`truncate` + `losetup`), nunca
+  discos reales. Declara 500 GB pero ocupa solo lo escrito. Sacar snapshot de la VM antes de tocar LVM.
+- **Cuota de proyecto en XFS:** el volumen debe montarse con `pquota`; si no, `xfs_quota` no tiene efecto.
+- **limits.conf:** los límites se aplican en el login (PAM). Para probarlos hay que entrar como el
+  usuario con `su - usuario` o `ssh`; un `su usuario` sin guion no los carga.
 - **Entorno del lab:** verificar si se resetea entre sesiones. Todo vive en este repo para reconstruir rápido.
 - **Independencia:** cada ejercicio debe poder demostrarse solo.
-- **Defensa:** todos deben entender los 6 módulos; conviene rotar quién prepara cada uno.
+- **Defensa:** el que explica cada ejercicio se elige al azar (consigna, punto 6), y la teoría de la
+  unidad pesa tanto como el ejercicio (punto 16). Usar los cuestionarios de cada unidad para preparar preguntas.

@@ -2,8 +2,9 @@
  * 04_carga_ram.c — carga de prueba para el Ejercicio 4
  *
  * Reserva memoria en bloques de 10 MB en un loop y la toca (memset) para
- * que realmente se asignen páginas. Dentro de un slice con MemoryMax el
- * OOM killer lo termina al superar el límite.
+ * que realmente se asignen páginas. Lanzado como un usuario del departamento
+ * (ulimit -v de 1 GB por limits.conf), malloc devuelve NULL al llegar al
+ * límite y el programa termina solo; el resto del servidor no se entera.
  *
  * Uso: ./bin/04_carga_ram [mb_por_paso] [ms_entre_pasos]
  */
