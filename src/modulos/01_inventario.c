@@ -10,23 +10,30 @@
  *   CPUs y carga  -> ¿hay contención? El nice del ej. 3 solo importa cuando
  *                    la carga supera la cantidad de núcleos.
  *   RAM disponible-> ¿cuántos procesos de 1 GB (límite del ej. 4) entran?
- *   Discos        -> ¿dónde vive el volumen de los departamentos (ej. 5)?
+ *   Disco libre   -> ¿cuántos discos simulados de 1 GB (ej. 5) entran en /?
  *
- * Todo sale de /proc: archivos virtuales que el kernel genera al leerlos.
- * El programa solo usa fopen/fgets/fclose, que por debajo son las syscalls
- * openat, read y close. Eso es lo que se muestra con strace en la demo.
+ * Casi todo sale de /proc: archivos virtuales que el kernel genera al leerlos.
+ * El programa usa fopen/fgets/fclose, que por debajo son las syscalls openat,
+ * read y close. El espacio libre no está en /proc: se pide con la syscall
+ * statvfs, la misma que usa df. Eso es lo que se muestra con strace en la demo.
  *
  * Herramientas: /proc/cpuinfo, /proc/loadavg, /proc/meminfo, /proc/partitions,
- *               lscpu, uptime y free (para comparar), strace (para ver las syscalls).
+ *               statvfs; lscpu, uptime, free y df (para comparar); strace.
  * Teoría:       syscalls, modo usuario vs modo kernel, sistema de archivos /proc.
  *
  * Compilar: make   (genera bin/01_inventario)
- * Demo:     strace -e trace=openat,read,close ./bin/01_inventario
+ * Demo:     strace -e trace=openat,read,close,statfs ./bin/01_inventario
  *           strace -c ./bin/01_inventario        (resumen: cuántas syscalls de cada tipo)
  *           strace -e trace=openat uptime        (uptime lee el mismo /proc/loadavg)
+ *           strace -e trace=statfs df -h /       (df hace la misma syscall que nosotros)
  */
 #include <stdio.h>
 #include <string.h>
+#include <sys/statvfs.h>
+
+/* Tamaño del disco simulado que crea 05_almacenamiento.sh (archivo disperso
+ * en /var/discos, o sea sobre /). Se usa para decir cuántos entran. */
+#define DISCO_SIMULADO_GB 1.0
 
 /* Cuenta las líneas "processor" de /proc/cpuinfo: hay una por núcleo. */
 static int contar_cpus(void) {
@@ -96,6 +103,15 @@ static double listar_discos(void) {
     return total_gb;
 }
 
+/* Espacio libre en GB del sistema de archivos que contiene 'ruta'.
+ * statvfs es la syscall que usa df: el kernel devuelve bloques totales y
+ * libres. f_bavail descuenta el 5 % reservado para root, igual que df. */
+static double espacio_libre_gb(const char *ruta) {
+    struct statvfs s;
+    if (statvfs(ruta, &s) != 0) { perror(ruta); return -1; }
+    return (double)s.f_bavail * s.f_frsize / (1024.0 * 1024.0 * 1024.0);
+}
+
 int main(void) {
     printf("=== Estado del servidor PagoSur antes del alta ===\n");
 
@@ -118,12 +134,15 @@ int main(void) {
                mem_disp / 1024, swap);
     }
 
-    /* Discos: dónde vive el volumen de los departamentos (ej. 5) */
+    /* Discos: qué hay, y cuánto queda libre en / para el disco simulado (ej. 5) */
     printf("Discos:\n");
-    double total_discos = listar_discos();
-    if (total_discos >= 0)
-        printf("  total          %8.2f GB   (el VG de los departamentos va sobre el loop)\n",
-               total_discos);
+    listar_discos();
+    double libre = espacio_libre_gb("/");
+    if (libre >= 0) {
+        printf("  libre en /     %8.2f GB\n", libre);
+        printf("         entran ~%d discos simulados de %.0f GB (ej. 5, /var/discos)\n",
+               (int)(libre / DISCO_SIMULADO_GB), DISCO_SIMULADO_GB);
+    }
 
     return 0;
 }

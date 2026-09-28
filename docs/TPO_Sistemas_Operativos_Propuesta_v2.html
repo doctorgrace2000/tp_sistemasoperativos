@@ -35,7 +35,7 @@ Cuando se incorpora un departamento nuevo, el administrador ejecuta un script de
 grupo y los usuarios, la carpeta con cuota de disco, los permisos por rol, y las reglas que evitan que un
 proceso de esos usuarios tumbe el servidor. Todo queda registrado en un log de auditoría.</p>
 <pre><code>sudo ./asignar.sh --depto finanzas --usuarios finanzas.csv</code></pre>
-<p>Todo departamento recibe lo mismo, definido como constantes en el script: <b>120 GB de disco</b>,
+<p>Todo departamento recibe lo mismo, definido como constantes en el script: <b>256 MB de disco</b>,
 sus procesos con <b>prioridad baja (nice 10)</b> y hasta <b>1 GB de memoria virtual por proceso</b>.
 Cuando el departamento se disuelve, <code>revocar.sh</code> deshace todo en orden inverso.</p>
 <p>El servidor es el escenario común, pero la consigna exige 6 ejercicios de unidades distintas. Por eso
@@ -70,9 +70,9 @@ una demostración en vez de configuración en el script.</li>
 <tr><td>1. Estructura del SO</td>
 <td>Antes de dar de alta un departamento, el admin quiere saber en qué estado está el servidor. El
 inventario lee <code>/proc</code> y reporta CPUs y carga (¿hay contención?), RAM disponible (¿cuántos
-procesos de 1 GB entran?) y discos.</td>
+procesos de 1 GB entran?) y discos con su espacio libre (¿cuántos discos simulados del ej. 5 entran?).</td>
 <td><code>/proc/cpuinfo</code>, <code>/proc/loadavg</code>, <code>/proc/meminfo</code>,
-<code>/proc/partitions</code>, <code>strace</code>, <code>lscpu</code>, <code>free</code></td>
+<code>/proc/partitions</code>, <code>statvfs</code>, <code>strace</code>, <code>lscpu</code>, <code>free</code>, <code>df</code></td>
 <td>C</td><td>Syscalls, modo usuario / kernel, <code>/proc</code></td></tr>
 <tr><td>2. Procesos</td>
 <td>Un usuario deja un proceso colgado consumiendo CPU y se va. El monitor recorre los procesos de los
@@ -93,7 +93,7 @@ normal.</td>
 <td><code>limits.conf</code>, <code>ulimit -v</code>, <code>free</code>, <code>vmstat</code>, <code>pmap</code></td>
 <td>Script + C (malloc en loop)</td><td>Memoria virtual, paginación, swap, OOM killer</td></tr>
 <tr><td>5. Almacenamiento</td>
-<td>Cada departamento necesita su carpeta con un tope de 120 GB que no pueda superar, y que se pueda
+<td>Cada departamento necesita su carpeta con un tope de 256 MB que no pueda superar, y que se pueda
 agrandar a demanda. Volumen lógico XFS sobre un loop device, montaje persistente y cuota de proyecto.
 <code>lvextend</code> a mano en la demo.</td>
 <td><code>losetup</code>, <code>pvcreate</code>, <code>vgcreate</code>, <code>lvcreate</code>,
@@ -116,9 +116,9 @@ ejemplo de MAC en la demo.</td>
 orden, porque cada uno depende del anterior:</p>
 <table>
 <tr><th style="width:5%">#</th><th style="width:22%">Módulo</th><th>Qué deja en el sistema</th></tr>
-<tr><td>1</td><td><code>01_inventario</code></td><td>Imprime CPUs y carga, RAM disponible y discos. No cambia nada.</td></tr>
+<tr><td>1</td><td><code>01_inventario</code></td><td>Imprime CPUs y carga, RAM disponible, discos y espacio libre en <code>/</code>. No cambia nada.</td></tr>
 <tr><td>6</td><td><code>06_seguridad.sh</code></td><td>Grupo <code>finanzas</code>. Usuarios del CSV con clave a cambiar en el primer login y vencimiento a 90 días. <code>/etc/sudoers.d/finanzas</code> para el jefe.</td></tr>
-<tr><td>5</td><td><code>05_almacenamiento.sh</code></td><td>LV <code>/dev/vg_pagosur/lv_finanzas</code> de 120 GB en XFS, montado en <code>/srv/finanzas</code> vía fstab con <code>pquota</code>. Carpeta <code>root:finanzas</code> modo <code>2770</code>. ACL de solo lectura para el auditor. Cuota de proyecto de 120 GB.</td></tr>
+<tr><td>5</td><td><code>05_almacenamiento.sh</code></td><td>LV <code>/dev/vg_pagosur/lv_finanzas</code> de 256 MB en XFS, montado en <code>/srv/finanzas</code> vía fstab con <code>pquota</code>. Carpeta <code>root:finanzas</code> modo <code>2770</code>. ACL de solo lectura para el auditor. Cuota de proyecto de 256 MB.</td></tr>
 <tr><td>3</td><td><code>03_cpu.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-cpu.conf</code> con <code>@finanzas - priority 10</code>.</td></tr>
 <tr><td>4</td><td><code>04_memoria.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-memoria.conf</code> con <code>@finanzas hard as 1048576</code>.</td></tr>
 </table>
@@ -132,7 +132,7 @@ nice                                      # -> 10       (ej. 3: menor prioridad)
 ulimit -v                                 # -> 1048576  (ej. 4: máx. 1 GB/proceso)
 cd /srv/finanzas &amp;&amp; cp ~/informe.pdf .    # su carpeta; hereda el grupo por SGID
 su - auditor1 -c "touch /srv/finanzas/x"  # falla: el auditor solo lee (ACL, ej. 6)
-dd if=/dev/zero of=/srv/finanzas/relleno bs=1M   # corta en 120 GB (cuota, ej. 5)</code></pre>
+dd if=/dev/zero of=/srv/finanzas/relleno bs=1M   # corta en 256 MB (cuota, ej. 5)</code></pre>
 
 <h3>3. Vigilancia (ej. 2, en su propia terminal)</h3>
 <pre><code>sudo ./modulos/02_monitor.sh finanzas 50      # umbral 50 % de CPU
@@ -177,8 +177,12 @@ Así cada integrante trabaja en el suyo y cualquier pieza se puede mostrar y def
 
 <h2>Consideraciones técnicas</h2>
 <ul>
-<li><b>Discos:</b> siempre un archivo disperso montado como loop device (<code>truncate -s 500G</code> +
-<code>losetup</code>), nunca discos reales. Declara 500 GB pero ocupa solo lo escrito. Snapshot de la VM antes de tocar LVM.</li>
+<li><b>Discos:</b> siempre un archivo disperso montado como loop device (<code>truncate -s 1G</code> +
+<code>losetup</code>), nunca discos reales. Declara 1 GB pero ocupa solo lo escrito. Snapshot de la VM antes de tocar LVM.</li>
+<li><b>Tamaños a escala de demo:</b> la VM del lab tiene ~2 GB libres en <code>/</code>, así que el disco
+simulado es de 1 GB y cada departamento recibe 256 MB. La demo es la misma que con cientos de GB (la cuota
+corta, el VG se agota en el cuarto departamento) y el <code>dd</code> termina en segundos. En producción se
+cambia la constante <code>DISCO</code> del script.</li>
 <li><b>Cuota de proyecto en XFS:</b> el volumen debe montarse con <code>pquota</code>; si no, <code>xfs_quota</code> no tiene efecto.</li>
 <li><b>limits.conf:</b> los límites se aplican en el login (PAM). Para probarlos hay que entrar con
 <code>su - usuario</code> (con guion) o <code>ssh</code>; un <code>su usuario</code> sin guion no los carga.</li>

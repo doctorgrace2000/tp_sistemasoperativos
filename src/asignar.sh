@@ -6,7 +6,7 @@
 #   ./asignar.sh --depto finanzas --usuarios ejemplos/finanzas.csv
 #
 # Crea el grupo y los usuarios del departamento, su carpeta en /srv/<depto>
-# con cuota de disco fija (120 GB), y las reglas de CPU y memoria que
+# con cuota de disco fija (256 MB), y las reglas de CPU y memoria que
 # protegen al servidor de los procesos de sus usuarios.
 #
 # Responsabilidad: validar parámetros y llamar a cada módulo en orden.
@@ -18,7 +18,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/lib/log.sh"
 
 # ---- valores fijos para todo departamento ----
-DISCO="120G"   # cuota de proyecto de la carpeta   -> 05_almacenamiento.sh
+DISCO="256M"   # cuota de proyecto de la carpeta   -> 05_almacenamiento.sh
 NICE=10        # prioridad de los procesos          -> 03_cpu.sh
 RAM_MB=1024    # memoria virtual máxima por proceso -> 04_memoria.sh
 

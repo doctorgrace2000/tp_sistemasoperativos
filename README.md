@@ -19,7 +19,7 @@ que evitan que un proceso de esos usuarios tumbe el servidor. Todo queda en un l
 ./asignar.sh --depto finanzas --usuarios finanzas.csv
 ```
 
-Todo departamento recibe lo mismo, definido como constantes en `asignar.sh`: 120 GB de disco,
+Todo departamento recibe lo mismo, definido como constantes en `asignar.sh`: 256 MB de disco,
 sus procesos con prioridad baja (nice 10) y hasta 1 GB de memoria virtual por proceso.
 Cuando el departamento se disuelve, `revocar.sh` deshace todo en orden inverso.
 
@@ -45,11 +45,11 @@ defender cualquier ejercicio** con la teoría de su unidad (puntos 6 y 16). Por 
 
 | # | Ejercicio | Situación y qué hace | Herramientas Red Hat | Código | Teoría |
 |---|-----------|----------------------|----------------------|--------|--------|
-| 1 | Estructura del SO | Inventario del servidor: CPUs, carga, RAM, swap y discos, leyendo `/proc` | `/proc/cpuinfo`, `/proc/loadavg`, `/proc/meminfo`, `/proc/partitions`, `strace`, `lscpu`, `free` | C | Syscalls, modo usuario/kernel, `/proc` |
+| 1 | Estructura del SO | Inventario del servidor: CPUs, carga, RAM, swap, discos y espacio libre, leyendo `/proc` y con la syscall `statvfs` | `/proc/cpuinfo`, `/proc/loadavg`, `/proc/meminfo`, `/proc/partitions`, `statvfs`, `strace`, `lscpu`, `free`, `df` | C | Syscalls, modo usuario/kernel, `/proc` |
 | 2 | Procesos | Un usuario deja un proceso colgado consumiendo CPU. El monitor lo detecta, le baja la prioridad y si reincide lo termina; reporta zombies | `ps`, `top`, `pstree`, `renice`, `kill` | Script | Estados, PCB, señales, zombies |
 | 3 | Planificación de CPU | Los procesos de los usuarios del departamento arrancan con nice 10, así el planificador prioriza al resto | `limits.conf`, `nice`, `renice`, `top`, `chrt` | Script + C (carga de prueba) | Planificador, prioridades, CFS, quantum |
 | 4 | Memoria | Ningún proceso de un usuario del departamento puede pedir más de 1 GB; `malloc` falla solo en ese proceso y el servidor sigue | `limits.conf`, `ulimit -v`, `free`, `vmstat`, `pmap` | Script + C (malloc en loop) | Memoria virtual, paginación, swap, OOM killer |
-| 5 | Almacenamiento | Carpeta del departamento sobre un volumen lógico XFS, montaje persistente y cuota de proyecto de 120 GB; extensión a demanda a mano | `losetup`, `pvcreate`, `vgcreate`, `lvcreate`, `mkfs.xfs`, `fstab`, `xfs_quota`, `lvextend` | Script | Sistemas de archivos, inodos, journaling, LVM |
+| 5 | Almacenamiento | Carpeta del departamento sobre un volumen lógico XFS, montaje persistente y cuota de proyecto de 256 MB; extensión a demanda a mano | `losetup`, `pvcreate`, `vgcreate`, `lvcreate`, `mkfs.xfs`, `fstab`, `xfs_quota`, `lvextend` | Script | Sistemas de archivos, inodos, journaling, LVM |
 | 6 | Seguridad | Alta de usuarios desde CSV, grupo por departamento, permisos por rol, auditor de solo lectura, sudo limitado; SELinux como ejemplo de MAC en la demo | `useradd`, `groupadd`, `chage`, `chmod`, SGID, `setfacl`, `sudoers`, `ls -Z`, `restorecon` | Script | DAC vs MAC, mínimo privilegio |
 
 ## Estructura del proyecto
@@ -114,14 +114,14 @@ sudo ./src/revocar.sh --depto finanzas # para repetir la demo desde cero
 Cada módulo también se ejecuta solo, por ejemplo:
 
 ```bash
-sudo ./src/modulos/05_almacenamiento.sh finanzas 120G
+sudo ./src/modulos/05_almacenamiento.sh finanzas 256M
 sudo ./src/modulos/02_monitor.sh finanzas 50
 ./bin/01_inventario
 ```
 
 ### Flujo del alta
 
-1. `asignar.sh` valida `--depto` y `--usuarios`. Los valores son fijos: `DISCO=120G`, `NICE=10`,
+1. `asignar.sh` valida `--depto` y `--usuarios`. Los valores son fijos: `DISCO=256M`, `NICE=10`,
    `RAM_MB=1024`.
 2. Llama a los módulos en orden: inventario → seguridad (grupo y usuarios) → almacenamiento →
    CPU → memoria. El monitor (ej. 2) no se lanza desde acá: se demuestra solo en su terminal.
@@ -143,7 +143,11 @@ sudo ./src/modulos/02_monitor.sh finanzas 50
 ## Consideraciones técnicas
 
 - **Discos:** siempre un archivo disperso montado como loop device (`truncate` + `losetup`), nunca
-  discos reales. Declara 500 GB pero ocupa solo lo escrito. Sacar snapshot de la VM antes de tocar LVM.
+  discos reales. Declara 1 GB pero ocupa solo lo escrito. Sacar snapshot de la VM antes de tocar LVM.
+- **Tamaños a escala de demo:** la VM del lab tiene ~2 GB libres en `/`, así que el disco simulado es
+  de 1 GB y cada departamento recibe 256 MB. La demo es la misma que con cientos de GB (la cuota
+  corta, el VG se agota en el cuarto departamento) y el `dd` termina en segundos. En producción se
+  cambia la constante `DISCO` de `asignar.sh`.
 - **Cuota de proyecto en XFS:** el volumen debe montarse con `pquota`; si no, `xfs_quota` no tiene efecto.
 - **limits.conf:** los límites se aplican en el login (PAM). Para probarlos hay que entrar como el
   usuario con `su - usuario` o `ssh`; un `su usuario` sin guion no los carga.
