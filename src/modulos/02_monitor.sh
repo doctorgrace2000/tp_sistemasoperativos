@@ -22,7 +22,8 @@
 # Demo (sin los otros módulos):
 #   sudo ./src/demo/simular_depto.sh finanzas        # crea grupo y usuarios
 #   sudo ./src/modulos/02_monitor.sh finanzas 50 5   # terminal 1
-#   su - lperez  ->  ./bin/03_carga_cpu              # terminal 2 (clave: pagosur)
+#   sudo install -m 755 bin/03_carga_cpu /usr/local/bin/   # lperez no entra al home del admin
+#   su - lperez  ->  03_carga_cpu                    # terminal 2 (clave: pagosur)
 #   El monitor lo detecta (renice), a la pasada siguiente reincide (SIGTERM)
 #   y si no muere en 2 s, SIGKILL. Todo queda en logs/asignador.log.
 #   Zombies: como lperez  (sleep 1 & exec sleep 60)  -> el monitor lo reporta.
@@ -42,6 +43,8 @@ getent group "$DEPTO" >/dev/null || { echo "El grupo '$DEPTO' no existe (ver dem
 # PIDs que ya recibieron el primer aviso (renice). Si aparecen de nuevo
 # sobre el umbral, reinciden y se terminan.
 declare -A AVISADOS
+# Zombies ya reportados, para no repetir la misma línea en cada pasada.
+declare -A ZOMBIES
 
 log "MONITOR: depto=$DEPTO umbral=${UMBRAL}% cada ${INTERVALO}s (Ctrl+C para salir)"
 
@@ -54,8 +57,12 @@ while true; do
         # --- Zombie: ya terminó pero el padre no hizo wait(). No se puede matar
         #     (ya está muerto); solo se puede avisar o terminar al padre. ---
         if [[ "$stat" == Z* ]]; then
-            ppid=$(ps -o ppid= -p "$pid" | tr -d ' ')
-            log "ZOMBIE  pid=$pid ($comm) de $user: el padre pid=$ppid no hizo wait()"
+            if [[ -z "${ZOMBIES[$pid]:-}" ]]; then
+                # || true: si el padre lo recogió recién, ps ya no lo encuentra
+                ppid=$(ps -o ppid= -p "$pid" | tr -d ' ' || true)
+                log "ZOMBIE  pid=$pid ($comm) de $user: el padre pid=${ppid:-?} no hizo wait()"
+                ZOMBIES[$pid]=1
+            fi
             continue
         fi
 
@@ -66,7 +73,8 @@ while true; do
         if [[ -z "${AVISADOS[$pid]:-}" ]]; then
             # --- Primera vez: bajar prioridad. El planificador le da menos CPU
             #     pero el proceso sigue vivo, por si era trabajo legítimo. ---
-            renice -n "$NICE_CASTIGO" -p "$pid" >/dev/null
+            # Si terminó entre el ps y acá, renice falla: se saltea.
+            renice -n "$NICE_CASTIGO" -p "$pid" >/dev/null 2>&1 || continue
             AVISADOS[$pid]=1
             log "AVISO   pid=$pid ($comm) de $user usa ${cpu}% > ${UMBRAL}%: renice a $NICE_CASTIGO"
         else
