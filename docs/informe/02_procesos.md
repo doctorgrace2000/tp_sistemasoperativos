@@ -21,6 +21,9 @@ solo, sin castigar de entrada a un proceso que quizás estaba haciendo trabajo l
    primero con `SIGTERM` (le pide que cierre ordenado) y, si no responde en 2 s, con `SIGKILL`.
 3. **Zombies:** además reporta los procesos zombie del departamento y quién es su padre, que es el
    verdadero responsable.
+4. **Resumen por departamento:** como el servidor lo comparten varios departamentos, en cada pasada
+   muestra cuántos procesos tiene cada uno, en qué estado están y cuánta CPU suman, para ver quién
+   está cargando la máquina.
 
 Todo queda registrado en `logs/asignador.log`, el log de auditoría compartido por todo el TP.
 
@@ -29,16 +32,22 @@ Todo queda registrado en `logs/asignador.log`, el log de auditoría compartido p
 ### Uso
 
 ```bash
-sudo ./src/modulos/02_monitor.sh <depto> [umbral_cpu%] [intervalo_seg]
-sudo ./src/modulos/02_monitor.sh finanzas 50 5     # umbral 50 %, una pasada cada 5 s
+sudo ./src/modulos/02_monitor.sh <depto>[,<depto>...] [umbral_cpu%] [intervalo_seg]
+sudo ./src/modulos/02_monitor.sh finanzas 50 5              # un departamento
+sudo ./src/modulos/02_monitor.sh finanzas,marketing 50 5    # varios: un for recorre la lista
+sudo ./src/modulos/02_monitor.sh finanzas,marketing 101 5   # solo observa (ver abajo)
 ```
+
+Con umbral **101** el monitor no actúa nunca y solo muestra el resumen: un proceso de un solo hilo
+no puede usar más del 100 % (un núcleo entero), así que ninguno lo supera.
 
 Necesita root porque un usuario común solo puede hacer `renice` y `kill` sobre sus propios
 procesos (y ni siquiera puede *subirse* la prioridad).
 
 ### Cómo funciona
 
-En cada pasada el script ejecuta:
+El script tiene dos bucles: un `while true` que repite la pasada cada `intervalo` segundos, y
+adentro un `for` que recorre la lista de departamentos. Para cada departamento ejecuta:
 
 ```bash
 ps -o pid=,user=,%cpu=,stat=,comm= -G finanzas
@@ -70,6 +79,18 @@ Para cada proceso:
                                                      → log REINCIDE
 ```
 
+Al terminar cada departamento imprime una línea de resumen (solo en pantalla, no en el log, para
+no llenarlo cada 5 s):
+
+```
+--- 18:05:10 ---
+finanzas       3 procesos  R=2   S/D=1   Z=0   CPU total= 198%
+marketing      2 procesos  R=1   S/D=1   Z=0   CPU total=  99%
+```
+
+`CPU total` suma el `%CPU` de todos los procesos del departamento. Con varios núcleos puede pasar
+el 100 %: 100 % equivale a un núcleo entero (en el ejemplo, finanzas ocupa casi dos).
+
 Los PIDs avisados se guardan en un arreglo asociativo de bash (`declare -A AVISADOS`); los zombies
 ya reportados en otro (`ZOMBIES`) para no repetir la línea en cada pasada.
 
@@ -83,6 +104,8 @@ Detalles que vale la pena poder explicar en la defensa:
 | `kill -0 $pid` | La señal 0 no se envía; solo verifica si el proceso existe y si tenemos permiso. |
 | El zombie no se mata | Ya está muerto: solo queda su entrada en la tabla de procesos. Se reporta al padre. |
 | `cpu_entero=${cpu%.*}` | `ps` devuelve `99.8`; bash solo compara enteros, así que se trunca. |
+| `total=$((total + 1))` | Con `set -e`, `((total++))` corta el script cuando `total` vale 0 (devuelve "falso"). |
+| `IFS=, read -ra LISTA` | Convierte `finanzas,marketing` en un arreglo para recorrerlo con `for`. |
 | `renice ... \|\| continue` | Si el proceso terminó entre el `ps` y el `renice`, no se corta el monitor (`set -e`). |
 
 ## 3. Demostración en Red Hat
@@ -106,7 +129,7 @@ sudo ./src/modulos/02_monitor.sh finanzas 50 5
 
 Salida esperada:
 ```
-2026-10-05 18:00:00 [root] MONITOR: depto=finanzas umbral=50% cada 5s (Ctrl+C para salir)
+2026-10-05 18:00:00 [root] MONITOR: deptos=finanzas umbral=50% cada 5s (Ctrl+C para salir)
 ```
 📸 `02_01_monitor_inicio.png`
 
@@ -141,7 +164,7 @@ grep ctxt /proc/4321/status          # cambios de contexto voluntarios / involun
 
 En la terminal 1 aparece:
 ```
-... [root] AVISO   pid=4321 (yes) de lperez usa 99.6% > 50%: renice a 19
+... [root] AVISO   pid=4321 (yes) de lperez [finanzas] usa 99.6% > 50%: renice a 19
 ```
 Y en la terminal 3, repitiendo el `ps`, la columna **NI** pasó de 0 a **19**, y el `STAT`
 muestra la marca **N** (prioridad baja): `RN`.
@@ -151,7 +174,7 @@ muestra la marca **N** (prioridad baja): `RN`.
 
 Cinco segundos después sigue arriba del umbral:
 ```
-... [root] REINCIDE pid=4321 (yes) de lperez sigue en 99.7%: kill -TERM
+... [root] REINCIDE pid=4321 (yes) de lperez [finanzas] sigue en 99.7%: kill -TERM
 ... [root]         pid=4321 terminó con SIGTERM
 ```
 En la terminal 2 la shell de `lperez` muestra `Terminated` (Terminado).
@@ -165,7 +188,7 @@ bash -c 'trap "" TERM; while :; do :; done'
 ```
 El monitor le hace `renice` y en la pasada siguiente:
 ```
-... [root] REINCIDE pid=4400 (bash) de lperez sigue en 99.5%: kill -TERM
+... [root] REINCIDE pid=4400 (bash) de lperez [finanzas] sigue en 99.5%: kill -TERM
 ... [root]         pid=4400 ignoró SIGTERM: kill -KILL
 ```
 En la terminal 2 aparece `Killed` (Terminado (killed)). Muestra la diferencia entre una señal que
@@ -187,7 +210,7 @@ pstree -p lperez                       # sleep(4501)───sleep(4502)
 ```
 Monitor:
 ```
-... [root] ZOMBIE  pid=4502 (sleep) de lperez: el padre pid=4501 no hizo wait()
+... [root] ZOMBIE  pid=4502 (sleep) de lperez [finanzas]: el padre pid=4501 no hizo wait()
 ```
 📸 `02_07_zombie.png`
 
@@ -199,14 +222,39 @@ sudo kill 4501;    ps -o pid,stat,comm -p 4502    # desaparece
 Al morir el padre, el zombie queda huérfano, lo adopta `systemd` (PID 1) y este hace `wait()`.
 📸 `02_08_zombie_padre.png`
 
-### Paso 8 – Auditoría y limpieza
+### Paso 8 – Dos departamentos: comparar la carga
+
+```bash
+sudo ./src/demo/simular_depto.sh marketing                     # jsuarez, mlopez, auditor2 (clave: pagosur)
+sudo ./src/modulos/02_monitor.sh finanzas,marketing 101 5      # terminal 1: solo observa
+```
+Terminal 2, como `lperez` (finanzas), dos cargas en segundo plano con un `for`:
+```bash
+for i in 1 2; do yes > /dev/null & done
+```
+Terminal 3, como `jsuarez` (marketing), una sola carga:
+```bash
+yes > /dev/null &
+```
+Al terminar, en cada terminal: `pkill yes`.
+El resumen muestra a finanzas con `R=2` y ~200 % de CPU y a marketing con `R=1` y ~100 %. Si la VM
+tiene menos núcleos que cargas, los procesos se reparten la CPU y los porcentajes bajan: se ve
+cómo el planificador comparte los núcleos entre los procesos listos (planificación de CPU).
+📸 `02_09_dos_deptos.png`
+
+Repitiendo con umbral 50 (`finanzas,marketing 50 5`) se ve que el monitor actúa en los dos
+departamentos por igual y el log indica a cuál pertenece cada proceso (`[finanzas]`,
+`[marketing]`).
+
+### Paso 9 – Auditoría y limpieza
 
 ```bash
 grep -E 'MONITOR|AVISO|REINCIDE|ZOMBIE|pid=' logs/asignador.log
 kill -l                                           # lista de señales (para la teoría)
 sudo ./src/demo/simular_depto.sh finanzas --borrar
+sudo ./src/demo/simular_depto.sh marketing --borrar
 ```
-📸 `02_09_log.png`
+📸 `02_10_log.png`
 
 ## 4. Apartado teórico
 
@@ -371,6 +419,11 @@ ajeno requiere privilegios de root.
 `ps` es una foto en un instante (ideal para scripts); `top` se actualiza continuamente y su `%CPU`
 es el uso en el último intervalo, mientras que el de `ps` es el promedio de toda la vida del
 proceso.
+
+**¿Por qué el `CPU total` de un departamento puede superar el 100 %?**
+Porque `ps` mide el `%CPU` de cada proceso respecto de **un** núcleo. Con dos procesos en bucle en
+una máquina de dos núcleos, cada uno usa ~100 % y el departamento suma ~200 %. Un proceso de un solo
+hilo nunca pasa el 100 %, porque solo puede ejecutarse en un núcleo a la vez.
 
 **¿Qué muestra `pstree` que no muestra `ps`?**
 La jerarquía padre/hijo en forma de árbol. Sirve para encontrar al padre responsable de un zombie
