@@ -35,8 +35,8 @@ Cuando se incorpora un departamento nuevo, el administrador ejecuta un script de
 grupo y los usuarios, la carpeta con cuota de disco, los permisos por rol, y las reglas que evitan que un
 proceso de esos usuarios tumbe el servidor. Todo queda registrado en un log de auditoría.</p>
 <pre><code>sudo ./asignar.sh --depto finanzas --usuarios finanzas.csv</code></pre>
-<p>Todo departamento recibe lo mismo, definido como constantes en el script: <b>256 MB de disco</b>,
-sus procesos con <b>prioridad baja (nice 10)</b> y hasta <b>1 GB de memoria virtual por proceso</b>.
+<p>Todo departamento recibe lo mismo, definido como constantes en el script: <b>256 MB de disco</b>
+y hasta <b>1 GB de memoria virtual por proceso</b>.
 Cuando el departamento se disuelve, <code>revocar.sh</code> deshace todo en orden inverso.</p>
 <p>El servidor es el escenario común, pero la consigna exige 6 ejercicios de unidades distintas. Por eso
 cada pieza del alta es un ejercicio independiente, con su propia situación, su solución con capturas y su
@@ -53,12 +53,14 @@ cualquier ejercicio</b> con la teoría de su unidad (puntos 6 y 16).</li>
 <li><b>cgroups no está en el programa.</b> Y un slice por departamento no captura automáticamente los
 procesos de un usuario que se loguea: había que lanzarlos a mano con <code>systemd-run</code>. Difícil de
 explicar y fácil de que falle en la defensa.</li>
-<li><b>Los límites de CPU y memoria ahora se aplican con <code>limits.conf</code></b>, que PAM activa en el
+<li><b>El límite de memoria ahora se aplica con <code>limits.conf</code></b>, que PAM activa en el
 login de cada usuario del grupo. Una línea por departamento, sin nada que lanzar. Es material clásico de
-las unidades de planificación y memoria.</li>
+la unidad de memoria.</li>
 <li><b>El único recurso que se reparte de verdad <i>por departamento</i> es el disco</b>, con una cuota de
-proyecto de XFS sobre la carpeta. CPU y memoria son reglas <i>por proceso</i> de los usuarios del grupo,
-pensadas para proteger al servidor. Se explica así en el informe.</li>
+proyecto de XFS sobre la carpeta. La memoria es una regla <i>por proceso</i> de los usuarios del grupo,
+pensada para proteger al servidor. Se explica así en el informe.</li>
+<li>El ejercicio de planificación de CPU (nice por grupo) se elimina: los ejercicios se numeran según las
+unidades de la materia, con Memoria como unidad 3 y Almacenamiento como unidad 4.</li>
 <li>El monitor de procesos pasa de C a bash (la propuesta ya decía "C o script"), y SELinux se reduce a
 una demostración en vez de configuración en el script.</li>
 </ul>
@@ -70,7 +72,7 @@ una demostración en vez de configuración en el script.</li>
 <tr><td>1. Estructura del SO</td>
 <td>Antes de dar de alta un departamento, el admin quiere saber en qué estado está el servidor. El
 inventario lee <code>/proc</code> y reporta CPUs y carga (¿hay contención?), RAM disponible (¿cuántos
-procesos de 1 GB entran?) y discos con su espacio libre (¿cuántos discos simulados del ej. 5 entran?).</td>
+procesos de 1 GB entran?) y discos con su espacio libre (¿cuántos discos simulados del ej. 4 entran?).</td>
 <td><code>/proc/cpuinfo</code>, <code>/proc/loadavg</code>, <code>/proc/meminfo</code>,
 <code>/proc/partitions</code>, <code>statvfs</code>, <code>strace</code>, <code>lscpu</code>, <code>free</code>, <code>df</code></td>
 <td>C</td><td>Syscalls, modo usuario / kernel, <code>/proc</code></td></tr>
@@ -80,25 +82,21 @@ usuarios del departamento, baja la prioridad al que supera el umbral y, si reinc
 zombies.</td>
 <td><code>ps</code>, <code>top</code>, <code>pstree</code>, <code>renice</code>, <code>kill</code></td>
 <td>Script</td><td>Estados, PCB, señales, zombies</td></tr>
-<tr><td>3. Planificación de CPU</td>
-<td>Un cálculo pesado de un analista pone lento el servidor para todos. Los procesos de los usuarios del
-departamento arrancan con nice 10, así el planificador prioriza al resto. Demo: dos cargas en C, una
-como usuario y otra como root, y <code>top</code> mostrando el reparto.</td>
-<td><code>limits.conf</code>, <code>nice</code>, <code>renice</code>, <code>top</code>, <code>chrt</code></td>
-<td>Script + C (carga)</td><td>Planificador, prioridades, CFS, quantum</td></tr>
-<tr><td>4. Memoria</td>
+<tr><td>3. Memoria</td>
 <td>Un proceso pide memoria sin parar hasta que el servidor swapea. Ningún proceso de un usuario del
 departamento puede pedir más de 1 GB: <code>malloc</code> falla solo en ese proceso y el servidor sigue
 normal.</td>
 <td><code>limits.conf</code>, <code>ulimit -v</code>, <code>free</code>, <code>vmstat</code>, <code>pmap</code></td>
 <td>Script + C (malloc en loop)</td><td>Memoria virtual, paginación, swap, OOM killer</td></tr>
-<tr><td>5. Almacenamiento</td>
+<tr><td>4. Almacenamiento</td>
 <td>Cada departamento necesita su carpeta con un tope de 256 MB que no pueda superar, y que se pueda
 agrandar a demanda. Volumen lógico XFS sobre un loop device, montaje persistente y cuota de proyecto.
 <code>lvextend</code> a mano en la demo.</td>
 <td><code>losetup</code>, <code>pvcreate</code>, <code>vgcreate</code>, <code>lvcreate</code>,
 <code>mkfs.xfs</code>, <code>fstab</code>, <code>xfs_quota</code>, <code>lvextend</code></td>
 <td>Script</td><td>Sistemas de archivos, inodos, journaling, LVM</td></tr>
+<tr><td>5. <i>(a definir)</i></td>
+<td>Unidad 5 de la materia: ejercicio pendiente de elegir.</td><td></td><td></td><td></td></tr>
 <tr><td>6. Seguridad</td>
 <td>Alta de usuarios desde un CSV con rol (jefe, analista, auditor): grupo del departamento, carpeta
 con SGID, auditor de solo lectura por ACL, sudo limitado para el jefe, clave que vence. SELinux como
@@ -118,9 +116,8 @@ orden, porque cada uno depende del anterior:</p>
 <tr><th style="width:5%">#</th><th style="width:22%">Módulo</th><th>Qué deja en el sistema</th></tr>
 <tr><td>1</td><td><code>01_inventario</code></td><td>Imprime CPUs y carga, RAM disponible, discos y espacio libre en <code>/</code>. No cambia nada.</td></tr>
 <tr><td>6</td><td><code>06_seguridad.sh</code></td><td>Grupo <code>finanzas</code>. Usuarios del CSV con clave a cambiar en el primer login y vencimiento a 90 días. <code>/etc/sudoers.d/finanzas</code> para el jefe.</td></tr>
-<tr><td>5</td><td><code>05_almacenamiento.sh</code></td><td>LV <code>/dev/vg_pagosur/lv_finanzas</code> de 256 MB en XFS, montado en <code>/srv/finanzas</code> vía fstab con <code>pquota</code>. Carpeta <code>root:finanzas</code> modo <code>2770</code>. ACL de solo lectura para el auditor. Cuota de proyecto de 256 MB.</td></tr>
-<tr><td>3</td><td><code>03_cpu.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-cpu.conf</code> con <code>@finanzas - priority 10</code>.</td></tr>
-<tr><td>4</td><td><code>04_memoria.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-memoria.conf</code> con <code>@finanzas hard as 1048576</code>.</td></tr>
+<tr><td>4</td><td><code>04_almacenamiento.sh</code></td><td>LV <code>/dev/vg_pagosur/lv_finanzas</code> de 256 MB en XFS, montado en <code>/srv/finanzas</code> vía fstab con <code>pquota</code>. Carpeta <code>root:finanzas</code> modo <code>2770</code>. ACL de solo lectura para el auditor. Cuota de proyecto de 256 MB.</td></tr>
+<tr><td>3</td><td><code>03_memoria.sh</code></td><td><code>/etc/security/limits.d/depto-finanzas-memoria.conf</code> con <code>@finanzas hard as 1048576</code>.</td></tr>
 </table>
 <p>Cada módulo escribe una línea en <code>logs/asignador.log</code> con fecha, usuario y acción.</p>
 
@@ -128,20 +125,19 @@ orden, porque cada uno depende del anterior:</p>
 <p>No hay nada que "acceder" ni configurar del lado del usuario. Entra con <code>ssh</code> o
 <code>su - ana</code> y en ese login PAM le aplica los límites del grupo:</p>
 <pre><code>su - ana                                  # analista de finanzas
-nice                                      # -> 10       (ej. 3: menor prioridad)
-ulimit -v                                 # -> 1048576  (ej. 4: máx. 1 GB/proceso)
+ulimit -v                                 # -> 1048576  (ej. 3: máx. 1 GB/proceso)
 cd /srv/finanzas &amp;&amp; cp ~/informe.pdf .    # su carpeta; hereda el grupo por SGID
 su - auditor1 -c "touch /srv/finanzas/x"  # falla: el auditor solo lee (ACL, ej. 6)
-dd if=/dev/zero of=/srv/finanzas/relleno bs=1M   # corta en 256 MB (cuota, ej. 5)</code></pre>
+dd if=/dev/zero of=/srv/finanzas/relleno bs=1M   # corta en 256 MB (cuota, ej. 4)</code></pre>
 
 <h3>3. Vigilancia (ej. 2, en su propia terminal)</h3>
 <pre><code>sudo ./modulos/02_monitor.sh finanzas 50      # umbral 50 % de CPU
-# en otra terminal, como ana:  ./bin/03_carga_cpu
+# en otra terminal, como ana:  yes > /dev/null   (satura un núcleo)
 # el monitor lo detecta, le hace renice, y si sigue, kill -TERM / kill -KILL</code></pre>
 
 <h3>4. Baja (cuando el departamento se disuelve)</h3>
 <pre><code>sudo ./revocar.sh --depto finanzas</code></pre>
-<p>Pide confirmación y deshace todo en orden inverso: borra los archivos de <code>limits.d</code>,
+<p>Pide confirmación y deshace todo en orden inverso: borra el archivo de <code>limits.d</code>,
 desmonta y elimina el volumen y su entrada en fstab, y por último elimina usuarios, grupo y sudoers.
 Sirve para repetir la demo desde cero.</p>
 
@@ -153,11 +149,9 @@ Sirve para repetir la demo desde cero.</p>
 └── modulos/
     ├── 01_inventario.c        # Ej. 1 – estado del servidor (/proc, syscalls)
     ├── 02_monitor.sh          # Ej. 2 – control de procesos (ps / renice / kill)
-    ├── 03_cpu.sh              # Ej. 3 – nice por grupo vía limits.d
-    ├── 03_carga_cpu.c         # Ej. 3 – carga de prueba que satura un núcleo
-    ├── 04_memoria.sh          # Ej. 4 – memoria máxima por proceso vía limits.d
-    ├── 04_carga_ram.c         # Ej. 4 – malloc en loop hasta que falla
-    ├── 05_almacenamiento.sh   # Ej. 5 – loop device + LVM + XFS + cuota de proyecto
+    ├── 03_memoria.sh          # Ej. 3 – memoria máxima por proceso vía limits.d
+    ├── 03_carga_ram.c         # Ej. 3 – malloc en loop hasta que falla
+    ├── 04_almacenamiento.sh   # Ej. 4 – loop device + LVM + XFS + cuota de proyecto
     └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo</code></pre>
 <p>El orquestador es corto y no contiene lógica de los ejercicios. Cada módulo vive en su propio archivo,
 se ejecuta solo, y tiene en el encabezado la situación, las herramientas, la demo y una lista de pasos.
@@ -168,8 +162,8 @@ Así cada integrante trabaja en el suyo y cualquier pieza se puede mostrar y def
 <tr><th style="width:38%">Requisito</th><th>Cómo se cumple</th></tr>
 <tr><td>6 ejercicios, uno por unidad (punto 4)</td><td>Cada módulo es un ejercicio con su unidad.</td></tr>
 <tr><td>Consola de Red Hat en todos (punto 10)</td><td>Todos se resuelven y demuestran por terminal.</td></tr>
-<tr><td>Shell scripting en al menos 3 (punto 14)</td><td>Ejercicios 2, 3, 4, 5, 6 y el orquestador.</td></tr>
-<tr><td>C/C++, valorado (punto 15)</td><td>Ejercicio 1 (inventario) y las cargas de prueba de 3 y 4.</td></tr>
+<tr><td>Shell scripting en al menos 3 (punto 14)</td><td>Ejercicios 2, 3, 4, 6 y el orquestador.</td></tr>
+<tr><td>C/C++, valorado (punto 15)</td><td>Ejercicio 1 (inventario) y la carga de prueba del 3.</td></tr>
 <tr><td>Enunciado hipotético creativo (puntos 8 y 13)</td><td>Escenario de empresa único; cada ejercicio arranca con una situación de una oración.</td></tr>
 <tr><td>Apartado teórico por ejercicio (punto 11)</td><td>Columna "Teoría" de la tabla como punto de partida.</td></tr>
 <tr><td>Cualquiera defiende cualquier ejercicio (puntos 6 y 16)</td><td>Módulos mínimos, sin herramientas fuera del programa. Cada informe cierra con preguntas de la unidad y sus respuestas, tomadas de los cuestionarios.</td></tr>
@@ -186,7 +180,7 @@ cambia la constante <code>DISCO</code> del script.</li>
 <li><b>Cuota de proyecto en XFS:</b> el volumen debe montarse con <code>pquota</code>; si no, <code>xfs_quota</code> no tiene efecto.</li>
 <li><b>limits.conf:</b> los límites se aplican en el login (PAM). Para probarlos hay que entrar con
 <code>su - usuario</code> (con guion) o <code>ssh</code>; un <code>su usuario</code> sin guion no los carga.</li>
-<li><b>Límite por proceso, no por departamento:</b> el nice y el 1 GB aplican a cada proceso de cada usuario
+<li><b>Límite por proceso, no por departamento:</b> el 1 GB aplica a cada proceso de cada usuario
 del grupo. Un usuario con diez procesos usa diez veces eso. Es una limitación conocida y se explica en el
 informe; la cuota de disco sí es por departamento.</li>
 <li><b>Entorno del lab:</b> verificar si se resetea entre sesiones. Todo vive en el repositorio para reconstruir rápido.</li>

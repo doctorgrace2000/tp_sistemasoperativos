@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 05_almacenamiento.sh — Ejercicio 5: Almacenamiento
+# 04_almacenamiento.sh — Ejercicio 4: Almacenamiento
 #
 # Situación: cada departamento necesita su carpeta en el servidor, con un
 # tope de espacio (256 MB) que no pueda superar aunque sus usuarios llenen
@@ -22,7 +22,7 @@
 #               /etc/fstab, mount, xfs_quota   (lvextend + xfs_growfs: a mano)
 # Teoría:       sistemas de archivos, inodos, journaling, LVM, montaje.
 #
-# Uso: 05_almacenamiento.sh <depto> <tamaño>   ej: 05_almacenamiento.sh finanzas 256M
+# Uso: 04_almacenamiento.sh <depto> <tamaño>   ej: 04_almacenamiento.sh finanzas 256M
 #
 # TODO:
 #   [ ] si no existe el VG: truncate -s 1G /var/discos/pagosur.img

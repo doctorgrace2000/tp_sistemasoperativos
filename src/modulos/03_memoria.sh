@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 04_memoria.sh — Ejercicio 4: Memoria
+# 03_memoria.sh — Ejercicio 3: Memoria
 #
 # Situación: un proceso de un usuario pide memoria sin parar y el servidor
 # empieza a swapear hasta que el OOM killer mata cualquier cosa. El admin
@@ -15,9 +15,9 @@
 # Teoría:       memoria virtual, espacio de direcciones, paginación, swap,
 #               OOM killer.
 #
-# Uso:  04_memoria.sh <depto> [mb]     ej: 04_memoria.sh finanzas 1024
+# Uso:  03_memoria.sh <depto> [mb]     ej: 03_memoria.sh finanzas 1024
 # Demo: su - ana -c 'ulimit -v'                -> 1048576
-#       su - ana -c ./bin/04_carga_ram          -> "malloc: Cannot allocate memory"
+#       su - ana -c ./bin/03_carga_ram          -> "malloc: Cannot allocate memory"
 #                                                   al llegar a ~1 GB
 #       en otra terminal: free -h y vmstat 1 -> el servidor sigue normal
 #       pmap <pid> mientras corre -> ver cómo crece el espacio de direcciones

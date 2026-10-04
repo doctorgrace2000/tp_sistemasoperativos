@@ -92,14 +92,11 @@ Detalles que vale la pena poder explicar en la defensa:
 ### Preparación (una sola vez)
 
 ```bash
-make                                             # compila bin/03_carga_cpu
 sudo ./src/demo/simular_depto.sh finanzas        # grupo finanzas + mgarcia, lperez, rsosa, auditor1 (clave: pagosur)
-sudo install -m 755 bin/03_carga_cpu /usr/local/bin/   # para que lperez pueda ejecutarlo
 ```
 
-El último paso hace falta porque el repo está en el home del administrador, que en RHEL tiene
-permisos `700`, y `lperez` no podría entrar a `bin/`. (Alternativa sin compilar: `yes > /dev/null`
-también consume 100 % de un núcleo.)
+El proceso colgado se simula con `yes > /dev/null`: `yes` imprime "y" sin parar y, con la salida
+descartada, consume el 100 % de un núcleo. No hace falta compilar nada.
 
 ### Paso 1 – Levantar el monitor (terminal 1)
 
@@ -117,10 +114,7 @@ Salida esperada:
 
 ```bash
 su - lperez            # con guion: login completo (carga limits.conf si el ej. 3 está aplicado)
-03_carga_cpu
-```
-```
-Carga de CPU iniciada (PID 4321)
+yes > /dev/null
 ```
 
 ### Paso 3 – Observar el proceso antes de que actúe el monitor (terminal 3)
@@ -133,7 +127,7 @@ top -u lperez          # tecla q para salir
 
 En `ps` se ve el proceso en estado **R** (running) con ~100 % de CPU, y la shell de `lperez` en
 **S** (sleeping, esperando que termine su hijo). `pstree` muestra la jerarquía
-`bash(4300)───03_carga_cpu(4321)`: la shell hizo `fork()` + `exec()` para lanzarlo.
+`bash(4300)───yes(4321)`: la shell hizo `fork()` + `exec()` para lanzarlo.
 📸 `02_02_ps_pstree_antes.png`
 
 Para mostrar el PCB "por dentro":
@@ -147,17 +141,17 @@ grep ctxt /proc/4321/status          # cambios de contexto voluntarios / involun
 
 En la terminal 1 aparece:
 ```
-... [root] AVISO   pid=4321 (03_carga_cpu) de lperez usa 99.6% > 50%: renice a 19
+... [root] AVISO   pid=4321 (yes) de lperez usa 99.6% > 50%: renice a 19
 ```
-Y en la terminal 3, repitiendo el `ps`, la columna **NI** pasó de 0 (o 10 si el ej. 3 está
-aplicado) a **19**, y el `STAT` muestra la marca **N** (prioridad baja): `RN`.
+Y en la terminal 3, repitiendo el `ps`, la columna **NI** pasó de 0 a **19**, y el `STAT`
+muestra la marca **N** (prioridad baja): `RN`.
 📸 `02_04_renice.png`
 
 ### Paso 5 – Reincide: SIGTERM
 
 Cinco segundos después sigue arriba del umbral:
 ```
-... [root] REINCIDE pid=4321 (03_carga_cpu) de lperez sigue en 99.7%: kill -TERM
+... [root] REINCIDE pid=4321 (yes) de lperez sigue en 99.7%: kill -TERM
 ... [root]         pid=4321 terminó con SIGTERM
 ```
 En la terminal 2 la shell de `lperez` muestra `Terminated` (Terminado).
@@ -257,7 +251,7 @@ Modificadores que aparecen en el demo: `N` prioridad baja (nice > 0), `<` priori
   en la tabla con el código de salida, y manda `SIGCHLD` al padre.
 - `wait()` / `waitpid()` es cómo el padre lee ese código; recién ahí la entrada se libera.
 
-Así lanza la shell cada comando: `fork()` → el hijo hace `exec("03_carga_cpu")` → el padre
+Así lanza la shell cada comando: `fork()` → el hijo hace `exec("yes")` → el padre
 (`bash`) hace `wait()`. Por eso en el paso 3 la shell aparece en estado `S`.
 
 ### Zombies y huérfanos
@@ -297,8 +291,7 @@ la columna `PR` = 20 + nice para procesos normales. Un usuario común solo puede
 proporción a un peso que depende del nice (cada nivel ≈ 10 % más o menos de CPU): un proceso con
 nice 19 frente a uno con nice 0 recibe apenas ~1,5 % de la CPU **cuando compiten**. Si la CPU está
 libre, igual la usa entera: por eso `renice` no baja el `%CPU` del proceso colgado en una máquina
-ociosa, pero sí evita que perjudique a los demás en un servidor cargado. (La planificación en sí
-es el tema del ej. 3.)
+ociosa, pero sí evita que perjudique a los demás en un servidor cargado.
 
 ## 5. Limitaciones y posibles mejoras
 

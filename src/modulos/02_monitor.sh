@@ -22,8 +22,7 @@
 # Demo (sin los otros módulos):
 #   sudo ./src/demo/simular_depto.sh finanzas        # crea grupo y usuarios
 #   sudo ./src/modulos/02_monitor.sh finanzas 50 5   # terminal 1
-#   sudo install -m 755 bin/03_carga_cpu /usr/local/bin/   # lperez no entra al home del admin
-#   su - lperez  ->  03_carga_cpu                    # terminal 2 (clave: pagosur)
+#   su - lperez  ->  yes > /dev/null                # terminal 2 (clave: pagosur): satura un núcleo
 #   El monitor lo detecta (renice), a la pasada siguiente reincide (SIGTERM)
 #   y si no muere en 2 s, SIGKILL. Todo queda en logs/asignador.log.
 #   Zombies: como lperez  (sleep 1 & exec sleep 60)  -> el monitor lo reporta.

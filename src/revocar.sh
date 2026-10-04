@@ -5,7 +5,7 @@
 # Uso:  ./revocar.sh --depto finanzas [--si]     (--si: no pide confirmación)
 #
 # Sirve para repetir la demo desde cero. Va en orden inverso al asignador:
-# primero las reglas de limits.d, después el disco, y al final los usuarios.
+# primero la regla de limits.d, después el disco, y al final los usuarios.
 # Cada paso se saltea si el recurso ya no existe, así se puede correr dos veces.
 # =============================================================================
 set -euo pipefail
@@ -29,21 +29,21 @@ LV="lv_${DEPTO}"
 PUNTO="/srv/${DEPTO}"
 
 if [[ $SI -eq 0 ]]; then
-    echo "Se borran los usuarios del grupo '$DEPTO', sus reglas de limits.d y el volumen /dev/$VG/$LV con sus datos."
+    echo "Se borran los usuarios del grupo '$DEPTO', su regla de limits.d y el volumen /dev/$VG/$LV con sus datos."
     read -r -p "¿Continuar? [s/N] " resp
     [[ "$resp" =~ ^[sS]$ ]] || { echo "Cancelado."; exit 0; }
 fi
 
 log "INICIO revocación depto=$DEPTO"
 
-# 1. CPU y memoria (Ej. 3 y 4): borrar las reglas de limits.d del grupo
+# 1. Memoria (Ej. 3): borrar la regla de limits.d del grupo
 for f in /etc/security/limits.d/depto-"$DEPTO"-*.conf; do
     [[ -f "$f" ]] || continue
     rm -f "$f"
     log "LIMITES: eliminado $f"
 done
 
-# 2. Almacenamiento (Ej. 5): desmontar, sacar de fstab, borrar el LV y la cuota de proyecto
+# 2. Almacenamiento (Ej. 4): desmontar, sacar de fstab, borrar el LV y la cuota de proyecto
 if mountpoint -q "$PUNTO"; then
     umount "$PUNTO"
     log "ALMACENAMIENTO: desmontado $PUNTO"

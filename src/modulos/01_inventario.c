@@ -1,46 +1,26 @@
-/*
- * 01_inventario.c — Ejercicio 1: Estructura del SO
- *
- * Situación: antes de dar de alta un departamento, el admin quiere saber en
- * qué estado está el servidor: si la CPU ya está saturada, cuánta memoria
- * queda para los procesos de los nuevos usuarios y qué discos hay. Es el
- * primer paso de asignar.sh.
- *
- * Cada dato responde a una pregunta de otro ejercicio:
- *   CPUs y carga  -> ¿hay contención? El nice del ej. 3 solo importa cuando
- *                    la carga supera la cantidad de núcleos.
- *   RAM disponible-> ¿cuántos procesos de 1 GB (límite del ej. 4) entran?
- *   Disco libre   -> ¿cuántos discos simulados de 1 GB (ej. 5) entran en /?
- *
- * Casi todo sale de /proc: archivos virtuales que el kernel genera al leerlos.
- * El programa usa fopen/fgets/fclose, que por debajo son las syscalls openat,
- * read y close. El espacio libre no está en /proc: se pide con la syscall
- * statvfs, la misma que usa df. Eso es lo que se muestra con strace en la demo.
- *
- * Herramientas: /proc/cpuinfo, /proc/loadavg, /proc/meminfo, /proc/partitions,
- *               statvfs; lscpu, uptime, free y df (para comparar); strace.
- * Teoría:       syscalls, modo usuario vs modo kernel, sistema de archivos /proc.
- *
- * Compilar: make   (genera bin/01_inventario)
- * Demo:     strace -e trace=openat,read,close,statfs ./bin/01_inventario
- *           strace -c ./bin/01_inventario        (resumen: cuántas syscalls de cada tipo)
- *           strace -e trace=openat uptime        (uptime lee el mismo /proc/loadavg)
- *           strace -e trace=statfs df -h /       (df hace la misma syscall que nosotros)
- */
+
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/statvfs.h>
 
-/* Tamaño del disco simulado que crea 05_almacenamiento.sh (archivo disperso
+/* Tamaño del disco simulado que crea 04_almacenamiento.sh (archivo disperso
  * en /var/discos, o sea sobre /). Se usa para decir cuántos entran. */
 #define DISCO_SIMULADO_GB 1.0
 
-/* Cuenta las líneas "processor" de /proc/cpuinfo: hay una por núcleo. */
+
 static int contar_cpus(void) {
+
+    /*Devuelve un puntero a una estructura de tipo FILE, fopen reserva
+    la estructura en memoria dinamica y devuelve la direccion*/
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) { perror("/proc/cpuinfo"); return -1; }
+
+    /*Creamos un buffer de 256 elementos*/
     char linea[256];
     int n = 0;
+
+    /*Intenta leer del archivo f y guardarla en linea buffer de caracteres*/
     while (fgets(linea, sizeof linea, f))
         if (strncmp(linea, "processor", 9) == 0) n++;
     fclose(f);
@@ -79,7 +59,7 @@ static int leer_meminfo(unsigned long *total, unsigned long *disp, unsigned long
  * Formato del archivo:  major minor  #blocks  name   (bloques de 1 KB).
  * Las particiones vienen justo después de su disco y llevan su nombre como
  * prefijo (vda -> vda1, vda2), así que se saltan para no contar dos veces.
- * loop0 sí cuenta: es lo que usa 05_almacenamiento.sh como disco simulado. */
+ * loop0 sí cuenta: es lo que usa 04_almacenamiento.sh como disco simulado. */
 static double listar_discos(void) {
     FILE *f = fopen("/proc/partitions", "r");
     if (!f) { perror("/proc/partitions"); return -1; }
@@ -126,7 +106,7 @@ int main(void) {
             printf("         SATURADO: hay %.1f procesos por nucleo esperando CPU\n", l15 / cpus);
     }
 
-    /* Memoria: cuántos procesos de 1 GB (límite del ej. 4) entran hoy */
+    /* Memoria: cuántos procesos de 1 GB (límite del ej. 3) entran hoy */
     unsigned long mem_total, mem_disp, swap;
     if (leer_meminfo(&mem_total, &mem_disp, &swap) == 0) {
         printf("RAM:     %lu MB total, %lu MB disponibles\n", mem_total, mem_disp);
@@ -134,13 +114,13 @@ int main(void) {
                mem_disp / 1024, swap);
     }
 
-    /* Discos: qué hay, y cuánto queda libre en / para el disco simulado (ej. 5) */
+    /* Discos: qué hay, y cuánto queda libre en / para el disco simulado (ej. 4) */
     printf("Discos:\n");
     listar_discos();
     double libre = espacio_libre_gb("/");
     if (libre >= 0) {
         printf("  libre en /     %8.2f GB\n", libre);
-        printf("         entran ~%d discos simulados de %.0f GB (ej. 5, /var/discos)\n",
+        printf("         entran ~%d discos simulados de %.0f GB (ej. 4, /var/discos)\n",
                (int)(libre / DISCO_SIMULADO_GB), DISCO_SIMULADO_GB);
     }
 
