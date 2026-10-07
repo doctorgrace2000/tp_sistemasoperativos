@@ -62,7 +62,14 @@ sed -i "\|:$PUNTO\$|d" /etc/projects 2>/dev/null || true
 
 # 3. Seguridad (Ej. 6): usuarios del grupo, grupo y sudoers
 if getent group "$DEPTO" &>/dev/null; then
-    for u in $(getent group "$DEPTO" | cut -d: -f4 | tr ',' ' '); do
+    gid=$(getent group "$DEPTO" | cut -d: -f3)
+    # Los usuarios del depto tienen el grupo como PRIMARIO (useradd -g), y esos
+    # no aparecen en la lista de miembros de getent group: hay que buscarlos
+    # por GID en passwd. Se suman también los miembros secundarios por si acaso.
+    usuarios=$( { getent passwd | awk -F: -v g="$gid" '$4 == g {print $1}';
+                  getent group "$DEPTO" | cut -d: -f4 | tr ',' '\n'; } | sort -u )
+    for u in $usuarios; do
+        [[ -z "$u" ]] && continue
         pkill -KILL -u "$u" || true        # no se puede borrar un usuario con procesos vivos
         userdel -r "$u"
         log "SEGURIDAD: eliminado usuario $u"
