@@ -51,7 +51,7 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `03_memoria.sh` | **Implementado en macOS, NUNCA ejecutado en Linux.** Hay que probarlo en la VM |
 | Ej. 3 `03_carga_ram.c` | Hecho. Falta compilarlo en la VM |
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
-| Ej. 4 `04_almacenamiento.sh` | Solo esqueleto, los pasos están en su TODO |
+| Ej. 4 `04_almacenamiento.sh` + `docs/informe/04_almacenamiento.md` | **Implementado en macOS, NUNCA ejecutado en Linux.** Probar en la VM (snapshot antes). El LV mide 25 % más que la cuota para que corte la cuota y no el disco lleno |
 | Ej. 5 | Sin definir todavía |
 | Ej. 6 `06_seguridad.sh` | Solo esqueleto, los pasos están en su TODO |
 
