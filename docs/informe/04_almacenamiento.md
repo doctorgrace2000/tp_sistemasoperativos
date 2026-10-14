@@ -1,6 +1,6 @@
 # Ejercicio 4 – Almacenamiento
 
-**Unidad:** Sistemas de archivos y almacenamiento (LVM, XFS, inodos, journaling, montaje, cuotas)
+**Unidad 4:** Almacenamiento: sistemas de archivos (LVM, XFS, inodos, journaling, montaje, cuotas)
 **Código:** [`src/modulos/04_almacenamiento.sh`](../../src/modulos/04_almacenamiento.sh) (shell script)
 **Herramientas Red Hat:** `truncate`, `losetup`, `pvcreate`, `vgcreate`, `lvcreate`, `mkfs.xfs`,
 `/etc/fstab`, `mount`, `xfs_quota`, `lvextend`, `lsblk`, `df`
