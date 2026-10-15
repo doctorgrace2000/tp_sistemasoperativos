@@ -51,8 +51,8 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `03_memoria.sh` | **Implementado en macOS, NUNCA ejecutado en Linux.** Hay que probarlo en la VM |
 | Ej. 3 `03_carga_ram.c` | Hecho. Falta compilarlo en la VM |
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
-| Ej. 4 `04_almacenamiento.sh` + `docs/informe/04_almacenamiento.md` | **Implementado en macOS, NUNCA ejecutado en Linux.** Probar en la VM (snapshot antes). El LV mide 25 % más que la cuota para que corte la cuota y no el disco lleno |
-| Ej. 5 | Sin definir todavía |
+| Ej. 4 `04_almacenamiento.sh` | **Rediseñado el 2026-10-14 a la versión simple**: cuota de proyecto XFS directa sobre `/srv/<depto>` en la partición raíz, sin LVM ni disco simulado. Requiere una sola vez `rootflags=pquota` en grub y reinicio. Sin probar en la VM todavía. La versión LVM quedó en `04_almacenamiento_lvm.sh` y su guion en `docs/demo_04_lvm.md`. **`docs/informe/04_almacenamiento.md` y la tabla del README describen la versión LVM: hay que reescribirlos si el grupo confirma la simple** |
+| Ej. 5 `05_es.sh` | Vacío. Propuesta escrita en `docs/propuesta_05_es.md` (dispositivo dedicado por depto vía regla de udev sobre `ttyS0`; plan B: cola CUPS). **Pendiente de decisión del grupo** |
 | Ej. 6 `06_seguridad.sh` | Solo esqueleto, los pasos están en su TODO |
 
 ## Qué hacer en la VM, en este orden
@@ -127,7 +127,11 @@ SGID en `/srv/<depto>` y `restorecon`.
 
 ### 6. Ejercicio 5
 
-Sigue sin definirse. No inventar uno sin consultar: es una decisión del grupo.
+Hay una propuesta en `docs/propuesta_05_es.md` con tres opciones y una recomendación. No
+implementar hasta que el grupo elija. Si eligen la opción 1, seguir el estilo de `03_memoria.sh`
+y agregar la baja de la regla de udev a `revocar.sh`.
+
+Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md`.
 
 ## Cómo trabaja el autor con Claude
 

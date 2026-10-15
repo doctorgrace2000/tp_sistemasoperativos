@@ -29,7 +29,7 @@ LV="lv_${DEPTO}"
 PUNTO="/srv/${DEPTO}"
 
 if [[ $SI -eq 0 ]]; then
-    echo "Se borran los usuarios del grupo '$DEPTO', su regla de limits.d y el volumen /dev/$VG/$LV con sus datos."
+    echo "Se borran los usuarios del grupo '$DEPTO', su regla de limits.d, su cuota y la carpeta $PUNTO con sus datos."
     read -r -p "¿Continuar? [s/N] " resp
     [[ "$resp" =~ ^[sS]$ ]] || { echo "Cancelado."; exit 0; }
 fi
@@ -43,7 +43,14 @@ for f in /etc/security/limits.d/depto-"$DEPTO"-*.conf; do
     log "LIMITES: eliminado $f"
 done
 
-# 2. Almacenamiento (Ej. 4): desmontar, sacar de fstab, borrar el LV y la cuota de proyecto
+# 2. Almacenamiento (Ej. 4): sacar la cuota de proyecto y borrar la carpeta.
+#    Los pasos de umount/fstab/LV solo actúan si el depto se creó con la
+#    variante LVM (04_almacenamiento_lvm.sh); con la cuota sobre / se saltean.
+if grep -q "^$DEPTO:" /etc/projid 2>/dev/null; then
+    FS=$(findmnt -no TARGET --target /srv)
+    xfs_quota -x -c "limit -p bhard=0 bsoft=0 $DEPTO" "$FS" 2>/dev/null || true
+    log "ALMACENAMIENTO: quitada la cuota de proyecto $DEPTO en $FS"
+fi
 if mountpoint -q "$PUNTO"; then
     umount "$PUNTO"
     log "ALMACENAMIENTO: desmontado $PUNTO"
@@ -56,7 +63,7 @@ if lvs "$VG/$LV" &>/dev/null; then
     lvremove -f "$VG/$LV"
     log "ALMACENAMIENTO: eliminado /dev/$VG/$LV"
 fi
-[[ -d "$PUNTO" ]] && rmdir "$PUNTO" && log "ALMACENAMIENTO: borrado $PUNTO"
+[[ -d "$PUNTO" ]] && rm -rf "$PUNTO" && log "ALMACENAMIENTO: borrado $PUNTO con sus datos"
 sed -i "/^$DEPTO:/d" /etc/projid 2>/dev/null || true
 sed -i "\|:$PUNTO\$|d" /etc/projects 2>/dev/null || true
 
