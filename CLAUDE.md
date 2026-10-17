@@ -53,7 +53,7 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
 | Ej. 4 `04_almacenamiento.sh` | **Rediseñado el 2026-10-14 a la versión simple**: cuota de proyecto XFS directa sobre `/srv/<depto>` en la partición raíz, sin LVM ni disco simulado. Requiere una sola vez `rootflags=pquota` en grub y reinicio. Sin probar en la VM todavía. La versión LVM quedó en `04_almacenamiento_lvm.sh` y su guion en `docs/demo_04_lvm.md`. **`docs/informe/04_almacenamiento.md` y la tabla del README describen la versión LVM: hay que reescribirlos si el grupo confirma la simple** |
 | Ej. 5 `05_es.sh` | Vacío. Propuesta escrita en `docs/propuesta_05_es.md` (dispositivo dedicado por depto vía regla de udev sobre `ttyS0`; plan B: cola CUPS). **Pendiente de decisión del grupo** |
-| Ej. 6 `06_seguridad.sh` | Solo esqueleto, los pasos están en su TODO |
+| Ej. 6 `06_seguridad.sh` | **Rediseñado el 2026-10-17**: alta de grupo y usuarios del CSV + bloqueo de puertos TCP de salida (SMTP 25/465/587, FTP 21, Telnet 23) para los procesos del grupo, con una tabla nftables por depto (`meta skgid`, gancho output). Sin sudoers, ACL ni roles. Sin probar en la VM. README e informe pendientes |
 
 ## Qué hacer en la VM, en este orden
 
@@ -121,9 +121,10 @@ para mostrar las syscalls. Escribir `docs/informe/01_estructura_so.md`.
 
 Seguir los TODO del encabezado de cada script. Para el 4: **sacar snapshot de la VM antes de
 tocar LVM**; el disco es siempre un archivo disperso con `losetup`, nunca un disco real; el
-volumen se monta con `pquota` o la cuota no funciona. Para el 6: `simular_depto.sh` ya hace la
-parte de grupo y usuarios, el módulo real agrega `chage`, sudoers del jefe, ACL del auditor,
-SGID en `/srv/<depto>` y `restorecon`.
+volumen se monta con `pquota` o la cuota no funciona. Para el 6: el módulo crea grupo y usuarios del CSV (igual que
+`simular_depto.sh`, más clave inicial con cambio forzado) y carga una tabla nftables que
+rechaza las conexiones TCP de salida del grupo a los puertos bloqueados. La demo usa un
+`nc -l` local como "servidor SMTP"; no necesita internet. `revocar.sh` borra la tabla.
 
 ### 6. Ejercicio 5
 

@@ -29,7 +29,7 @@ LV="lv_${DEPTO}"
 PUNTO="/srv/${DEPTO}"
 
 if [[ $SI -eq 0 ]]; then
-    echo "Se borran los usuarios del grupo '$DEPTO', su regla de limits.d, su cuota y la carpeta $PUNTO con sus datos."
+    echo "Se borran los usuarios del grupo '$DEPTO', su regla de limits.d, su regla de red, su cuota y la carpeta $PUNTO con sus datos."
     read -r -p "¿Continuar? [s/N] " resp
     [[ "$resp" =~ ^[sS]$ ]] || { echo "Cancelado."; exit 0; }
 fi
@@ -67,7 +67,14 @@ fi
 sed -i "/^$DEPTO:/d" /etc/projid 2>/dev/null || true
 sed -i "\|:$PUNTO\$|d" /etc/projects 2>/dev/null || true
 
-# 3. Seguridad (Ej. 6): usuarios del grupo, grupo y sudoers
+# 3. Seguridad (Ej. 6): regla de red, usuarios del grupo y grupo
+TABLA="depto_${DEPTO//-/_}"
+if nft list table inet "$TABLA" &>/dev/null; then
+    nft delete table inet "$TABLA"
+    log "SEGURIDAD: eliminada la tabla nft $TABLA (bloqueo de puertos)"
+fi
+rm -f "/etc/nftables/depto-$DEPTO-red.nft"
+
 if getent group "$DEPTO" &>/dev/null; then
     gid=$(getent group "$DEPTO" | cut -d: -f3)
     # Los usuarios del depto tienen el grupo como PRIMARIO (useradd -g), y esos
