@@ -6,7 +6,7 @@
 
 /* Tamaño del disco simulado que crea 04_almacenamiento.sh (archivo disperso
  * en /var/discos, o sea sobre /). Se usa para decir cuántos entran. */
-#define DISCO_SIMULADO_GB 1.0
+#define DISCO_SIMULADO_GB 1.5
 
 
 static int contar_cpus(void) {
@@ -120,7 +120,7 @@ int main(void) {
     double libre = espacio_libre_gb("/");
     if (libre >= 0) {
         printf("  libre en /     %8.2f GB\n", libre);
-        printf("         entran ~%d discos simulados de %.0f GB (ej. 4, /var/discos)\n",
+        printf("         entran ~%d discos simulados de %.1f GB (ej. 4, /var/discos)\n",
                (int)(libre / DISCO_SIMULADO_GB), DISCO_SIMULADO_GB);
     }
 

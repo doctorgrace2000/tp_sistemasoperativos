@@ -2,106 +2,151 @@
 # =============================================================================
 # 04_almacenamiento.sh — Ejercicio 4: Almacenamiento
 #
-# Situación: cada departamento necesita su carpeta en el servidor con un tope
-# de espacio (256 MB) que no pueda superar aunque sus usuarios llenen el disco.
+# Situación: cada departamento necesita su carpeta en el servidor, con un
+# tope de espacio (256 MB) que no pueda superar aunque sus usuarios llenen
+# el disco, y que se pueda agrandar cuando lo pidan.
 #
-# Cómo: la carpeta /srv/<depto> vive en el sistema de archivos XFS del
-# servidor, y sobre esa carpeta se aplica una CUOTA DE PROYECTO de XFS. La
-# cuota de proyecto limita la carpeta entera, no importa qué usuario escriba:
-# es el único límite que de verdad es "por departamento". No hace falta disco
-# aparte, ni LVM, ni formatear ni montar nada: se usa el espacio libre que ya
-# tiene la partición.
+# Cómo: un volumen lógico (LVM) formateado en XFS, montado de forma
+# persistente en /srv/<depto>, con una CUOTA DE PROYECTO de XFS sobre ese
+# directorio. La cuota de proyecto limita la carpeta entera, no importa qué
+# usuario escriba: es el único límite que de verdad es "por departamento".
 #
-# Llamadas al sistema que hay detrás de cada paso (se ven con strace):
-#   mkdir(2), chown(2), chmod(2)        -> la carpeta y sus permisos
-#   setxattr(2)                         -> etiqueta SELinux (restorecon)
-#   ioctl(FS_IOC_FSSETXATTR)            -> marca la carpeta con el ID de proyecto
-#                                          y el flag de herencia (xfs_quota project -s)
-#   quotactl(2) Q_XSETQLIM              -> fija el tope duro de bloques (xfs_quota limit)
-#   write(2) -> -1, errno = EDQUOT      -> lo que recibe el usuario al pasarse:
-#                                          "Disk quota exceeded"
+# El volumen se crea un 50 % más grande que la cuota (256 MB -> LV de 384 MB).
+# XFS usa parte del volumen para su journal y sus estructuras: probado en la
+# VM, un LV de 320 MB deja solo 238 MB libres. Si el LV no tuviera margen, el
+# disco se llenaría ANTES de llegar a la cuota y el error sería "No space left
+# on device" en vez de "Disk quota exceeded": la cuota no estaría haciendo
+# nada. Con 384 MB quedan ~300 MB libres y lo que corta es la cuota.
 #
-# Requisito (una sola vez, antes de la primera alta): el XFS tiene que estar
-# montado con cuotas de proyecto. Para la raíz eso se activa con un parámetro
-# del kernel y un reinicio; el script lo detecta y dice qué hacer:
-#   sudo grubby --update-kernel=ALL --args="rootflags=pquota" && sudo reboot
-#   findmnt -no OPTIONS /     -> tiene que incluir "prjquota"
+# El "disco" es SIEMPRE un archivo montado como loop device, así no depende
+# de que la VM tenga discos extra. Es un archivo disperso de 1,5 GB: ocupa
+# solo lo que se escribe. La VM del lab tiene ~2 GB libres en /, por eso
+# los tamaños son de escala demo (3 departamentos de 384 MB entran en el VG,
+# el cuarto falla por falta de espacio). En producción serían GB; el script
+# recibe el tamaño por parámetro, así que es cambiar una constante.
 #
-# Herramientas: xfs_quota, findmnt, /etc/projects, /etc/projid, df, du, strace
-# Teoría:       sistemas de archivos, inodos, journaling, cuotas, montaje
-#               y opciones de montaje, llamadas al sistema de E/S de archivos.
+# Un loop device NO sobrevive a un reinicio. La línea de fstab lleva "nofail"
+# para que la VM arranque igual; después de reiniciar, volver a correr este
+# script: reconecta el archivo, activa el VG y monta (cada paso se saltea si
+# ya está hecho).
+#
+# Herramientas: truncate, losetup, pvcreate, vgcreate, lvcreate, mkfs.xfs,
+#               /etc/fstab, mount, xfs_quota   (lvextend -r: a mano en la demo)
+# Teoría:       sistemas de archivos, inodos, journaling, LVM, montaje, cuotas.
 #
 # Uso: sudo 04_almacenamiento.sh <depto> <tamaño>   ej: 04_almacenamiento.sh finanzas 256M
 #      El grupo <depto> tiene que existir (06_seguridad.sh o demo/simular_depto.sh).
+#      ¡Sacar snapshot de la VM antes de la primera vez! (toca LVM y /etc/fstab)
 #
 # Demo (desde la raíz del repo):
 #   sudo ./src/demo/simular_depto.sh finanzas
 #   sudo ./src/modulos/04_almacenamiento.sh finanzas 256M
-#   ls -ld /srv/finanzas                               -> drwxrws--- root finanzas
-#   sudo xfs_quota -x -c "report -p -h" /              -> finanzas: usado 0, límite 256M
+#   lsblk; sudo pvs; sudo vgs; sudo lvs; df -h /srv/finanzas; grep srv /etc/fstab
+#   sudo xfs_quota -x -c "report -p -h" /srv/finanzas
 #   sudo su - lperez -c "dd if=/dev/zero of=/srv/finanzas/relleno bs=1M count=400"
-#       -> corta en 256 MB con "Disk quota exceeded"; df -h / casi no se mueve
-#   Ver la syscall que falla:
-#   sudo strace -f -e trace=write -o /tmp/dd.log su - lperez -c "dd if=/dev/zero of=/srv/finanzas/r2 bs=1M count=5"
-#   grep EDQUOT /tmp/dd.log
-#   Agrandar a demanda (a mano): sudo xfs_quota -x -c "limit -p bhard=512M finanzas" /
+#       -> corta en 256 MB con "Disk quota exceeded"
+#   Agrandar a demanda (a mano):
+#   sudo lvextend -r -L +64M /dev/vg_pagosur/lv_finanzas      # -r agranda también el XFS
+#   sudo xfs_quota -x -c "limit -p bhard=320M finanzas" /srv/finanzas
 # =============================================================================
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/log.sh"
 
 DEPTO="${1:?Uso: $0 <depto> <tamaño>   ej: $0 finanzas 256M}"
 TAM="${2:?Uso: $0 <depto> <tamaño>   ej: $0 finanzas 256M}"
+VG="vg_pagosur"
+LV="lv_${DEPTO}"
 PUNTO="/srv/${DEPTO}"
+IMG="/var/discos/pagosur.img"   # el "disco" simulado
+IMG_TAM="1536M"                 # 1,5 GB (truncate no acepta decimales)
 
 # ---- validaciones ----
 [[ $EUID -eq 0 ]] || { echo "Ejecutar como root (sudo)"; exit 1; }
 [[ "$TAM" =~ ^[0-9]+[MG]$ ]] || { echo "Tamaño inválido '$TAM': usar por ej. 256M o 1G"; exit 1; }
 getent group "$DEPTO" >/dev/null || { echo "El grupo '$DEPTO' no existe: crear el depto primero (06_seguridad.sh)"; exit 1; }
-command -v xfs_quota >/dev/null || { echo "Falta xfs_quota: sudo dnf install -y xfsprogs"; exit 1; }
+for cmd in losetup pvcreate mkfs.xfs xfs_quota; do
+    command -v "$cmd" >/dev/null || { echo "Falta '$cmd': sudo dnf install -y lvm2 xfsprogs"; exit 1; }
+done
 
-# ¿En qué sistema de archivos cae /srv? Tiene que ser XFS montado con cuotas de proyecto.
-mkdir -p /srv
-MONTAJE=$(findmnt -no TARGET  --target /srv)
-TIPO=$(findmnt -no FSTYPE  --target /srv)
-OPCIONES=$(findmnt -no OPTIONS --target /srv)
+# Tamaños en MB. numfmt pasa "256M" a bytes (268435456).
+CUOTA_MB=$(( $(numfmt --from=iec "$TAM") / 1024 / 1024 ))
+LV_MB=$(( CUOTA_MB * 3 / 2 ))    # +50 %: ver encabezado
 
-[[ "$TIPO" == "xfs" ]] || { echo "/srv está en un sistema de archivos $TIPO; las cuotas de proyecto de este módulo son de XFS"; exit 1; }
-if ! grep -qE '(^|,)(prjquota|pquota)(,|$)' <<<"$OPCIONES"; then
-    cat >&2 <<EOF
-El sistema de archivos $MONTAJE ($TIPO) no está montado con cuotas de proyecto.
-En XFS no se puede activar en caliente: hay que montarlo con "pquota" desde el arranque.
-Para la raíz, una sola vez:
-    sudo grubby --update-kernel=ALL --args="rootflags=pquota" && sudo reboot
-Después verificar con:  findmnt -no OPTIONS $MONTAJE   (tiene que incluir prjquota)
-EOF
-    log "ALMACENAMIENTO: ERROR $MONTAJE sin pquota, no se puede aplicar la cuota de $DEPTO"
-    exit 1
+# ---- 1. Disco simulado y grupo de volúmenes (una sola vez para todos) ----
+# truncate crea un archivo DISPERSO: declara 1,5 GB pero no ocupa nada hasta
+# que se escribe. losetup lo presenta como un disco de bloques (/dev/loopN).
+if [[ ! -f "$IMG" ]]; then
+    mkdir -p "$(dirname "$IMG")"
+    truncate -s "$IMG_TAM" "$IMG"
+    log "ALMACENAMIENTO: creado disco simulado $IMG ($IMG_TAM, disperso)"
 fi
 
-# ---- 1. La carpeta del departamento ----
-# 2770: dueño y grupo leen/escriben, el resto nada. El "2" (SGID) hace que todo
-# lo que se cree adentro quede del grupo del departamento, no del que lo creó.
-mkdir -p "$PUNTO"                                   # mkdir(2)
-chown root:"$DEPTO" "$PUNTO"                        # chown(2)
-chmod 2770 "$PUNTO"                                 # chmod(2)
-command -v restorecon >/dev/null && restorecon -R "$PUNTO"   # setxattr(2) security.selinux
-log "ALMACENAMIENTO: carpeta $PUNTO root:$DEPTO 2770"
+LOOP=$(losetup -j "$IMG" | cut -d: -f1 | head -n1)    # ¿ya está conectado?
+if [[ -z "$LOOP" ]]; then
+    LOOP=$(losetup -f --show "$IMG")                   # -f: primer loop libre
+    log "ALMACENAMIENTO: $IMG conectado como $LOOP"
+fi
 
-# ---- 2. Cuota de proyecto ----
-# Un "proyecto" de XFS es un árbol de directorios con un número. Se usa el GID
-# del grupo como ID: ya es único y fácil de explicar.
+if vgs "$VG" &>/dev/null; then
+    vgchange -ay "$VG" >/dev/null       # por si se reinició: activa los LV
+else
+    # PV = el disco marcado para LVM; VG = el "pozo" de espacio que se reparte
+    pvcreate -q "$LOOP"
+    vgcreate -q "$VG" "$LOOP"
+    log "ALMACENAMIENTO: creado PV $LOOP y VG $VG"
+fi
+
+# ---- 2. Volumen lógico del departamento + sistema de archivos XFS ----
+if lvs "$VG/$LV" &>/dev/null; then
+    log "ALMACENAMIENTO: /dev/$VG/$LV ya existe, no se toca"
+else
+    LIBRE_MB=$(( $(vgs --noheadings --units b --nosuffix -o vg_free "$VG" | tr -d ' ') / 1024 / 1024 ))
+    if (( LIBRE_MB < LV_MB )); then
+        log "ALMACENAMIENTO: ERROR no hay lugar para $DEPTO: hacen falta ${LV_MB} MB y el VG $VG tiene ${LIBRE_MB} MB libres"
+        exit 1
+    fi
+    lvcreate -q -y -L "${LV_MB}M" -n "$LV" "$VG"
+    mkfs.xfs -q "/dev/$VG/$LV"
+    log "ALMACENAMIENTO: creado /dev/$VG/$LV de ${LV_MB} MB con XFS"
+fi
+
+# ---- 3. Montaje persistente en /srv/<depto> ----
+# fstab: <dispositivo> <punto> <tipo> <opciones> <dump> <fsck>
+#   pquota: activa las cuotas de proyecto (sin esto xfs_quota no limita nada,
+#           y en XFS no se puede activar después con un remount)
+#   nofail: si el loop no está (después de un reinicio) la VM arranca igual
+mkdir -p "$PUNTO"
+if ! grep -q "[[:space:]]$PUNTO[[:space:]]" /etc/fstab; then
+    echo "/dev/$VG/$LV  $PUNTO  xfs  defaults,pquota,nofail  0 0" >> /etc/fstab
+    systemctl daemon-reload            # systemd genera los montajes a partir de fstab
+    log "ALMACENAMIENTO: agregado $PUNTO a /etc/fstab"
+fi
+if ! mountpoint -q "$PUNTO"; then
+    mount "$PUNTO"                     # usa la línea de fstab: prueba que esté bien
+    log "ALMACENAMIENTO: montado /dev/$VG/$LV en $PUNTO"
+fi
+
+# Permisos DESPUÉS de montar (antes se aplicarían a la carpeta vacía de abajo).
+# 2770: dueño y grupo leen/escriben, el resto nada; el 2 (SGID) hace que todo
+# lo que se cree adentro quede del grupo del departamento.
+chown root:"$DEPTO" "$PUNTO"
+chmod 2770 "$PUNTO"
+# Un XFS recién creado no tiene etiquetas de SELinux: restorecon le pone la
+# que corresponde a /srv (el detalle de SELinux es del ej. 6).
+command -v restorecon >/dev/null && restorecon -R "$PUNTO"
+
+# ---- 4. Cuota de proyecto ----
+# Un "proyecto" de XFS es un árbol de directorios con un número (ID). Se usa
+# el GID del grupo: ya es único y fácil de explicar.
 #   /etc/projects: <ID>:<carpeta>      /etc/projid: <nombre>:<ID>
-# Son tablas de nombres para xfs_quota; el kernel solo conoce el número.
 ID=$(getent group "$DEPTO" | cut -d: -f3)
 grep -q "^$ID:" /etc/projects 2>/dev/null || echo "$ID:$PUNTO" >> /etc/projects
 grep -q "^$DEPTO:" /etc/projid 2>/dev/null || echo "$DEPTO:$ID" >> /etc/projid
 
-# project -s: ioctl(FS_IOC_FSSETXATTR) sobre la carpeta: fsx_projid = ID y el
-#   flag PROJINHERIT, así cada archivo nuevo nace "cobrado" a este proyecto.
-# limit -p bhard: quotactl(Q_XSETQLIM): tope duro de bloques. Al llegar, el
-#   write(2) del usuario falla con EDQUOT.
-xfs_quota -x -c "project -s $DEPTO" "$MONTAJE" >/dev/null
-xfs_quota -x -c "limit -p bhard=$TAM $DEPTO" "$MONTAJE"
-log "ALMACENAMIENTO: cuota de proyecto $DEPTO (id $ID) = $TAM sobre $PUNTO (fs $MONTAJE)"
+# project -s: marca la carpeta (y lo que se cree adentro) con el ID del proyecto
+# limit bhard: tope duro de bloques; al llegar, write() falla con EDQUOT
+xfs_quota -x -c "project -s $DEPTO" "$PUNTO" >/dev/null
+xfs_quota -x -c "limit -p bhard=$TAM $DEPTO" "$PUNTO"
+log "ALMACENAMIENTO: cuota de proyecto $DEPTO (id $ID) = $TAM sobre $PUNTO"
 
-xfs_quota -x -c "report -p -h" "$MONTAJE" | grep -E "Project|^$DEPTO|^-" || true
+df -h "$PUNTO"

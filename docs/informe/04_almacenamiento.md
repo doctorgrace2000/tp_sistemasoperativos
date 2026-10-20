@@ -31,21 +31,21 @@ sudo ./src/modulos/04_almacenamiento.sh finanzas 256M
 ### Qué arma el script
 
 ```
- /var/discos/pagosur.img   (archivo disperso de 1 GB: el "disco")
+ /var/discos/pagosur.img   (archivo disperso de 1,5 GB: el "disco")
           │ losetup
           ▼
      /dev/loop0            ── PV  (pvcreate: el disco queda marcado para LVM)
           │
           ▼
-     vg_pagosur  (~1 GB)   ── VG  (vgcreate: un "pozo" de espacio para repartir)
-      ├── lv_finanzas  320 MB ── LV ── XFS ── montado en /srv/finanzas  (cuota 256 MB)
-      ├── lv_marketing 320 MB ── LV ── XFS ── montado en /srv/marketing (cuota 256 MB)
+     vg_pagosur (~1,5 GB)  ── VG  (vgcreate: un "pozo" de espacio para repartir)
+      ├── lv_finanzas  384 MB ── LV ── XFS ── montado en /srv/finanzas  (cuota 256 MB)
+      ├── lv_marketing 384 MB ── LV ── XFS ── montado en /srv/marketing (cuota 256 MB)
       └── libre
 ```
 
 Paso a paso:
 
-1. **Disco simulado (una sola vez).** `truncate -s 1G` crea un archivo *disperso*: declara 1 GB pero
+1. **Disco simulado (una sola vez).** `truncate -s 1536M` crea un archivo *disperso*: declara 1,5 GB pero
    ocupa en disco solo lo que se escribe. `losetup` lo presenta como un dispositivo de bloques
    (`/dev/loop0`), igual que si fuera un disco real. Así la demo no depende de que la VM tenga discos
    extra ni se arriesga ningún disco real.
@@ -69,7 +69,7 @@ Cada paso se saltea si ya estaba hecho, así el script se puede volver a correr 
 | Archivo + `losetup` en vez de un disco | No depende de la VM, no hay riesgo de borrar un disco real, y el archivo disperso no gasta espacio de más. |
 | LVM en vez de una partición | Un LV se agranda en caliente con `lvextend`; una partición está pegada a las que tiene al lado. |
 | XFS | Es el sistema de archivos por defecto de RHEL, tiene journaling y cuotas de proyecto. |
-| LV de 320 MB para una cuota de 256 MB | XFS usa parte del volumen para su journal y sus estructuras. Si el LV midiera lo mismo que la cuota, el disco se llenaría **antes** y el error sería "No space left on device": la cuota no estaría haciendo nada. Con un 25 % de margen, lo que corta es la cuota ("Disk quota exceeded"). |
+| LV de 384 MB para una cuota de 256 MB | XFS usa parte del volumen para su journal y sus estructuras. Lo medimos en la VM: un LV de 320 MB dejaba solo 238 MB libres, menos que la cuota, y el disco se llenaba **antes** ("No space left on device"): la cuota no hacía nada. Con un 50 % de margen quedan ~300 MB libres y lo que corta es la cuota ("Disk quota exceeded"). |
 | Opción `pquota` en fstab | Sin ella, XFS no lleva la cuenta de los proyectos y `xfs_quota` no limita nada. En XFS no se puede activar después con un `remount`: tiene que estar desde el primer montaje. |
 | Opción `nofail` en fstab | Un loop device no sobrevive a un reinicio. Sin `nofail`, la VM no arrancaría (entraría en modo de emergencia) por no encontrar el volumen. |
 | Cuota de **proyecto** y no de usuario | Una cuota de usuario limita a cada persona. La de proyecto limita **la carpeta**, sin importar quién escriba: es un límite por departamento. |
@@ -96,10 +96,10 @@ sudo ./src/modulos/04_almacenamiento.sh finanzas 256M
 ```
 Salida esperada (resumida):
 ```
-... ALMACENAMIENTO: creado disco simulado /var/discos/pagosur.img (1G, disperso)
+... ALMACENAMIENTO: creado disco simulado /var/discos/pagosur.img (1536M, disperso)
 ... ALMACENAMIENTO: /var/discos/pagosur.img conectado como /dev/loop0
 ... ALMACENAMIENTO: creado PV /dev/loop0 y VG vg_pagosur
-... ALMACENAMIENTO: creado /dev/vg_pagosur/lv_finanzas de 320 MB con XFS
+... ALMACENAMIENTO: creado /dev/vg_pagosur/lv_finanzas de 384 MB con XFS
 ... ALMACENAMIENTO: agregado /srv/finanzas a /etc/fstab
 ... ALMACENAMIENTO: montado /dev/vg_pagosur/lv_finanzas en /srv/finanzas
 ... ALMACENAMIENTO: cuota de proyecto finanzas (id 1001) = 256M sobre /srv/finanzas
@@ -114,7 +114,7 @@ sudo pvs; sudo vgs; sudo lvs            # las tres capas de LVM
 df -hT /srv/finanzas                    # tipo xfs y tamaño
 grep srv /etc/fstab                     # la línea persistente
 ls -ld /srv/finanzas                    # drwxrws--- root finanzas  (la "s" es el SGID)
-ls -ls /var/discos/pagosur.img          # 1 GB declarado, casi nada ocupado (disperso)
+ls -ls /var/discos/pagosur.img          # 1,5 GB declarado, casi nada ocupado (disperso)
 ```
 📸 `04_03_lvm_fstab.png`
 
@@ -149,7 +149,7 @@ Ahora `lperez` puede escribir 64 MB más. Un XFS se puede **agrandar** en calien
 
 ### Paso 6 – El VG se agota
 
-Cada departamento ocupa 320 MB de un VG de ~1 GB: entran tres, el cuarto no.
+Cada departamento ocupa 384 MB de un VG de ~1,5 GB: entran tres, el cuarto no.
 ```bash
 sudo rm /srv/finanzas/relleno
 for d in marketing rrhh legales; do
@@ -160,9 +160,9 @@ sudo vgs                                                 # VFree casi en cero
 ```
 El último falla con:
 ```
-... ALMACENAMIENTO: ERROR no hay lugar para legales: hacen falta 320 MB y el VG vg_pagosur tiene ... MB libres
+... ALMACENAMIENTO: ERROR no hay lugar para legales: hacen falta 384 MB y el VG vg_pagosur tiene ... MB libres
 ```
-(Si en el paso 5 se agrandó finanzas, el que falla puede ser `rrhh`.) La solución real sería agregar
+La solución real sería agregar
 otro disco al VG con `vgextend`.
 📸 `04_06_vg_lleno.png`
 
@@ -271,7 +271,7 @@ bloques. Se usa para imágenes ISO, contenedores y pruebas como esta.
   real sería un VG con varios discos o RAID.
 - **XFS no se achica.** Si un departamento pide menos espacio, solo se puede bajar la cuota, no el LV.
 - **Tamaños de demo.** En RHEL 9 `mkfs.xfs` acepta volúmenes chicos, pero en versiones más nuevas
-  (RHEL 10) el mínimo es 300 MB. Con 320 MB por departamento funciona en las dos.
+  (RHEL 10) el mínimo es 300 MB. Con 384 MB por departamento funciona en las dos.
 
 ## 6. Preguntas para la defensa
 
@@ -331,7 +331,7 @@ Porque XFS reserva parte del volumen para su journal y metadatos. Si midieran lo
 llenaría antes que la cuota y el que frenaría al usuario sería el disco lleno, no la cuota.
 
 **¿Qué es un archivo disperso? ¿Cómo se ve la diferencia?**
-Un archivo con "agujeros" que no ocupan bloques reales. `ls -l` muestra el tamaño declarado (1 GB) y
+Un archivo con "agujeros" que no ocupan bloques reales. `ls -l` muestra el tamaño declarado (1,5 GB) y
 `ls -s` o `du -h` lo que ocupa de verdad.
 
 **¿Qué es un loop device?**

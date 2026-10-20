@@ -1,66 +1,121 @@
 # Guion de presentación — Ejercicio 4: Almacenamiento
 
-Presentación en vivo de `04_almacenamiento.sh` (versión simple: cuota de proyecto XFS sobre la
-partición raíz). Dura entre 5 y 7 minutos. Dos terminales en la raíz del repo de la VM.
+Cómo poner en marcha `04_almacenamiento.sh` en la VM Red Hat y cómo presentarlo al profesor.
+Dura entre 7 y 9 minutos. El detalle técnico, la teoría y las preguntas completas están en
+`docs/informe/04_almacenamiento.md`; esto es la hoja para tener al lado en la presentación.
 Lo que está en cursiva es lo que se dice. Los bloques de código son lo que se tipea.
 
 Datos de la VM que condicionan el guion:
 
-- La raíz (`/dev/vda4`) es XFS. `/srv` vive ahí. No hay disco extra ni espacio sin particionar.
-- Las cuotas de proyecto se activan **una sola vez** con `rootflags=pquota` y un reinicio. Si la
-  VM se reinició después, el parámetro queda en grub y sigue activo.
-- El home de `student` tiene permisos 700; no afecta este ejercicio porque todo pasa en `/srv`.
+- El script toca LVM y `/etc/fstab`. **Snapshot de la VM antes de la primera corrida.**
+- El "disco" es un archivo disperso de 1,5 GB en `/var/discos/`. Hace falta que `/` tenga al menos
+  1 GB libre de verdad, porque el `dd` de la demo lo va a llenar en parte.
+- Un loop device no sobrevive a un reinicio. Si la VM se reinició entre el ensayo y la demo, volver
+  a correr el script para cada departamento: reconecta el archivo, activa el VG y monta.
+- El script nunca se ejecutó en Linux antes del ensayo. **Ensayar completo al menos una vez.**
 
 ---
 
-## Paso 0 — Preparación (antes de la presentación)
+## Parte A — Implementarlo en la VM (una sola vez)
 
-Una sola vez, activar las cuotas de proyecto en la raíz:
-
-```bash
-sudo grubby --update-kernel=ALL --args="rootflags=pquota" && sudo reboot
-```
-
-Después del reinicio, confirmar:
-
-```bash
-findmnt -no OPTIONS /          # tiene que incluir: prjquota
-```
-
-Preparar el departamento y dejar limpio lo del ejercicio:
+### A1. Paquetes y espacio
 
 ```bash
 cd ~/tp_sistemasoperativos && git pull
-sudo src/demo/simular_depto.sh finanzas
-sudo src/revocar.sh --depto finanzas --si 2>/dev/null; sudo src/demo/simular_depto.sh finanzas
-ls /srv                        # tiene que salir vacío (o sin finanzas)
+sudo dnf install -y lvm2 xfsprogs util-linux coreutils
+df -h /
 ```
 
-Ensayar la secuencia completa una vez. Es la primera vez que el script corre en Linux.
+`df -h /` tiene que mostrar más de 1 GB en `Avail`. Si no, liberar espacio antes de seguir.
+
+### A2. Snapshot
+
+En VirtualBox: Máquina → Tomar instantánea. Nombre: `antes-ej4`. Si algo sale mal con LVM o
+fstab, se vuelve acá en segundos.
+
+### A3. Estado limpio
+
+Confirmar que no quedó nada de un intento anterior:
+
+```bash
+sudo vgs 2>/dev/null; grep srv /etc/fstab; ls /var/discos 2>/dev/null; losetup -a
+```
+
+Todo tiene que salir vacío. Si hay restos, limpiar con la Parte D.
+
+### A4. Primera corrida (el ensayo)
+
+```bash
+sudo src/demo/simular_depto.sh finanzas
+sudo src/modulos/04_almacenamiento.sh finanzas 256M
+```
+
+Salida esperada en el log: disco creado, loop conectado, PV y VG creados, LV de 384 MB con XFS,
+línea en fstab, montado, cuota aplicada. Termina con el `df -h /srv/finanzas`.
+
+Verificar las tres cosas que más fallan:
+
+```bash
+df -hT /srv/finanzas                                  # tipo xfs, ~315M de tamaño
+mount | grep srv/finanzas                             # tiene que decir prjquota
+sudo xfs_quota -x -c "report -p -h" /srv/finanzas     # finanzas con límite 256M
+```
+
+Si `mount` no muestra `prjquota`, la cuota no va a limitar nada: revisar la línea de fstab.
+
+### A5. Probar la cuota y limpiar
+
+```bash
+sudo su - lperez -c "dd if=/dev/zero of=/srv/finanzas/relleno bs=1M count=400"
+```
+
+Tiene que cortar con `Disk quota exceeded`, no con `No space left on device`. Después, dejar
+todo como estaba para que la demo arranque de cero (Parte D).
+
+### Si algo falla en la implementación
+
+| Síntoma | Causa probable | Qué hacer |
+|---|---|---|
+| `Falta 'pvcreate'` o `'xfs_quota'` | Paquetes no instalados | `sudo dnf install -y lvm2 xfsprogs` |
+| `mkfs.xfs` se queja del tamaño mínimo | RHEL 10 exige 300 MB; con 384 entra, pero si se pidió menos de 200M no | Usar 256M o más como tamaño |
+| `mount: /srv/finanzas: can't find in /etc/fstab` | La línea no se escribió | Revisar `grep srv /etc/fstab` y volver a correr el script |
+| `dd` corta con `No space left on device` | Se montó sin `pquota` o el LV quedó del tamaño de la cuota | `mount \| grep srv`; revisar la línea de fstab; si hace falta, revocar y rehacer |
+| `xfs_quota: cannot set limits: Function not implemented` | Montado sin `prjquota` | Mismo que arriba |
+| Después de reiniciar, `/srv/finanzas` no está montado | El loop desapareció (esperado) | `sudo src/modulos/04_almacenamiento.sh finanzas 256M` reconecta y monta |
+| El script dice "el grupo no existe" | No corrió `simular_depto.sh` | `sudo src/demo/simular_depto.sh finanzas` |
 
 ---
 
-## La demo
+## Parte B — Preparación el día de la demo
+
+```bash
+cd ~/tp_sistemasoperativos
+sudo src/demo/simular_depto.sh finanzas
+sudo vgs 2>/dev/null; grep srv /etc/fstab      # tiene que salir vacío: arrancamos de cero
+```
+
+Dos terminales abiertas en la raíz del repo.
+
+---
+
+## Parte C — La demo
 
 ### 1. Situación (30 segundos, sin tipear)
 
-*El servidor de PagoSur es el repositorio de archivos de la empresa. Cada departamento tiene su
-carpeta. Si Finanzas guarda sin control, llena el disco y se queda sin espacio el sistema entero,
-incluidos los otros departamentos. El objetivo: la carpeta de Finanzas no puede pasar de 256 MB,
-y si lo intenta, falla esa escritura y nada más.*
+*El servidor de PagoSur es el repositorio de archivos de la empresa. Cada departamento necesita su
+carpeta, con un tope de espacio que no pueda superar aunque sus usuarios llenen el disco, y que se
+pueda agrandar cuando lo pidan sin apagar nada. Finanzas recibe 256 MB.*
 
-### 2. Dónde vive la carpeta (1 minuto)
+### 2. Estado inicial (30 segundos)
 
 ```bash
 lsblk
-findmnt -no SOURCE,FSTYPE,OPTIONS /
+df -h
 ```
 
-*Un solo disco, cuatro particiones. La raíz es vda4, XFS. Ahí va a vivir /srv/finanzas. Fíjense
-en las opciones de montaje: prjquota. Eso le dice al sistema de archivos que lleve la contabilidad
-de cuotas por proyecto. Sin esa opción no hay cuota posible, y como la raíz se monta al arrancar,
-se activa con un parámetro del kernel. Es un ejemplo de que las opciones de montaje se fijan al
-montar.*
+*Hoy hay un solo disco. No hay nada de Finanzas. Lo que voy a armar es: un volumen lógico con LVM,
+formateado en XFS, montado en /srv/finanzas de forma persistente, con una cuota de proyecto de
+256 MB sobre esa carpeta.*
 
 ### 3. El alta (1 minuto)
 
@@ -68,160 +123,169 @@ montar.*
 sudo src/modulos/04_almacenamiento.sh finanzas 256M
 ```
 
-*El script hace tres cosas. Chequea que estemos en XFS con cuotas activas. Crea la carpeta con
-dueño root, grupo finanzas y permisos 2770. Y le aplica la cuota: la marca como proyecto
-finanzas y le pone un tope duro de 256 MB. Al final muestra la tabla de cuotas.*
+Mientras sale el log, ir leyendo:
+
+*Primero crea el disco: en el laboratorio no tenemos un disco extra, así que es un archivo de 1,5 GB
+que losetup presenta como un dispositivo de bloques. Es un archivo disperso: declara 1,5 GB pero solo
+ocupa lo que se escribe. Después lo marca como volumen físico y crea el grupo de volúmenes, que es
+el pozo de espacio común a todos los departamentos. De ese pozo saca el volumen lógico de Finanzas,
+lo formatea con XFS, lo agrega a fstab y lo monta. Por último aplica la cuota.*
+
+### 4. Las tres capas y el disco disperso (1,5 minutos)
 
 ```bash
+lsblk
+sudo pvs; sudo vgs; sudo lvs
+```
+
+*Acá están las tres capas de LVM. El PV es loop0, el disco. El VG es vg_pagosur, el pozo: 1,5 GB.
+El LV es lv_finanzas, 384 MB sacados del pozo. Esa es la gracia de LVM frente a las particiones:
+el LV se agranda en caliente y el VG puede sumar discos.*
+
+```bash
+df -hT /srv/finanzas
+grep srv /etc/fstab
 ls -ld /srv/finanzas
+ls -ls /var/discos/pagosur.img
 ```
 
-*drwxrws---: el departamento entra, el resto no. La "s" es el SGID: todo lo que se cree adentro
-queda del grupo finanzas, sin importar quién lo creó.*
-
-### 4. Cómo sabe el kernel a quién cobrarle (1 minuto)
-
-```bash
-cat /etc/projects /etc/projid
-sudo xfs_quota -x -c "report -p -h" /
-```
-
-*Estos dos archivos son la agenda de la herramienta: el proyecto 1003 es /srv/finanzas y se llama
-finanzas. El kernel no los lee. Lo que el kernel sabe está en el nodo-i: cuando marcamos la
-carpeta, se le grabó el número de proyecto y una bandera de herencia. Cada archivo nuevo nace
-con ese número en su propio nodo-i. Así, cuando un archivo pide un bloque, el kernel mira el
-nodo-i, ve "proyecto 1003", suma el bloque a esa cuenta y la compara con el límite. El reporte
-muestra la tabla: usado cero, límite duro 256M.*
+*df muestra que es XFS y que está montado. La línea de fstab tiene dos opciones importantes:
+pquota, que activa las cuotas de proyecto, sin eso xfs_quota no limita nada; y nofail, para que si
+el loop no está al arrancar la VM no entre en modo de emergencia. En ls -ld, la "s" en el grupo es
+el SGID: todo lo que se cree adentro queda del grupo finanzas. Y en ls -ls se ve el archivo
+disperso: declara 1,5 GB, ocupa unos pocos MB.*
 
 ### 5. La cuota en acción (1,5 minutos, el núcleo)
 
-Terminal 1:
+```bash
+sudo xfs_quota -x -c "report -p -h" /srv/finanzas
+```
+
+*Proyecto finanzas, usado cero, límite duro 256 MB. Ahora un usuario de Finanzas intenta escribir
+400 MB:*
 
 ```bash
 sudo su - lperez -c "dd if=/dev/zero of=/srv/finanzas/relleno bs=1M count=400"
 ```
 
-*Un usuario de Finanzas intenta escribir 400 MB. Corta en 256 con "Disk quota exceeded". No es
-"disco lleno": es cuota excedida.*
-
-Terminal 2:
+*Corta en 256 con "Disk quota exceeded". Fíjense qué error es: cuota excedida, no disco lleno.*
 
 ```bash
-sudo xfs_quota -x -c "report -p -h" /
-df -h /
+sudo xfs_quota -x -c "report -p -h" /srv/finanzas
+df -h /srv/finanzas
 ```
 
-*El reporte dice usado 256, igual al límite. Y df muestra que a la partición le sobran gigas. La
-unidad lo describe así: cada vez que se agrega un bloque a un archivo se incrementa la cuenta del
-propietario y se verifica con los límites; el duro no se puede exceder, y el intento produce un
-error. Eso es exactamente lo que acabamos de ver.*
+*El reporte dice usado 256, igual al límite. Y df muestra que al volumen todavía le quedan unos
+40 MB. Por eso el LV es un 50 % más grande que la cuota (lo medimos: con 25 % no alcanzaba): XFS usa parte del volumen para su journal
+y sus metadatos; si midieran lo mismo, el disco se llenaría antes y el que frenaría sería el disco,
+no la cuota. Elegimos cuota de proyecto y no de usuario porque limita la carpeta entera, sin
+importar quién escriba: es el único límite que de verdad es por departamento.*
 
-Opcional, la llamada al sistema que falla:
+### 6. Agrandar a demanda (1 minuto)
+
+*Finanzas pide más espacio. Sin desmontar, sin cortar a nadie:*
 
 ```bash
-sudo strace -f -e trace=write -o /tmp/dd.log su - lperez -c "dd if=/dev/zero of=/srv/finanzas/r2 bs=1M count=5"; grep -m1 EDQUOT /tmp/dd.log
+sudo lvextend -r -L +64M /dev/vg_pagosur/lv_finanzas
+sudo xfs_quota -x -c "limit -p bhard=320M finanzas" /srv/finanzas
+df -h /srv/finanzas
+sudo xfs_quota -x -c "report -p -h" /srv/finanzas
 ```
 
-*El programa hace write, el kernel devuelve -1 con EDQUOT. dd no sabe que hay cuotas: hizo su
-llamada normal y el kernel dijo que no. Igual que en el ejercicio 3 con la memoria.*
+*lvextend saca 64 MB más del pozo y, con -r, agranda también el XFS de adentro. Después subimos la
+cuota. Esto en una partición clásica no se puede hacer en caliente. Un XFS se puede agrandar pero
+no achicar: si Finanzas pide menos, solo se baja la cuota.*
 
-### 6. Agrandar a demanda (30 segundos)
-
-*Finanzas pide más espacio. Es cambiar un número en la tabla de cuotas, sin tocar nada más:*
+### 7. El montaje es persistente (30 segundos)
 
 ```bash
-sudo xfs_quota -x -c "limit -p bhard=512M finanzas" /
-sudo xfs_quota -x -c "report -p -h" /
+sudo umount /srv/finanzas
+df -h | grep srv
+sudo mount -a
+df -h | grep srv
 ```
 
-### 7. Cierre (30 segundos)
+*Lo desmonto, desaparece. mount -a monta todo lo que dice fstab, y vuelve. Es lo mismo que pasa en
+cada arranque. Se prueba con mount -a y no reiniciando porque un error en fstab puede dejar la VM
+sin arrancar; así lo vemos mientras todavía se puede corregir.*
+
+### 8. Opcional si sobra tiempo: el pozo se agota (1 minuto)
 
 ```bash
-tail -5 logs/asignador.log
+sudo rm /srv/finanzas/relleno
+for d in marketing rrhh legales; do sudo groupadd "$d"; sudo src/modulos/04_almacenamiento.sh "$d" 256M; done
+sudo vgs
 ```
 
-*Todo auditado. En el flujo normal este módulo lo llama asignar.sh al dar de alta el
-departamento, y revocar.sh lo deshace: quita la cuota y borra la carpeta.*
+*Cada departamento se lleva 384 MB de un pozo de 1,5 GB. Entran tres; el cuarto falla con un mensaje
+claro en el log antes de tocar nada. La solución real sería agregar otro disco al VG con vgextend.*
+(Si en el paso 6 se agrandó Finanzas, el que falla puede ser el tercero.)
 
-*Resumen: la carpeta vive en la partición raíz, XFS montada con cuotas de proyecto. El número de
-proyecto está en el nodo-i de cada archivo. En cada bloque que se pide, el kernel suma y compara
-con el límite duro. Al pasarlo, el write falla. El usuario se entera, el resto del servidor no.*
+### 9. Cierre (30 segundos)
+
+```bash
+tail -8 logs/asignador.log
+```
+
+*Todo auditado. En el flujo normal este módulo lo llama asignar.sh al dar de alta el departamento,
+después de crear el grupo y antes de la regla de memoria. Y revocar.sh lo deshace en orden inverso:
+desmonta, saca la línea de fstab, borra el LV y la cuota.*
 
 ---
 
-## Preguntas probables y respuestas
+## Las cinco preguntas que más probablemente hagan
 
-**¿Por qué cuota de proyecto y no de usuario, que es la que describe la unidad?**
-Porque el requisito es por carpeta: "Finanzas no pasa de 256 MB" sin importar cuál de los cuatro
-usuarios escribe. Una cuota por usuario daría 256 a cada uno, 1 GB al departamento. El mecanismo
-del kernel es el mismo que describe la unidad (tabla de cuotas, verificación en cada bloque, error
-al pasar el límite duro); solo cambia a quién se le cobra: al proyecto en vez de al propietario.
+Las demás están en la sección 6 del informe.
 
-**¿Qué diferencia hay entre límite duro y suave?**
-El suave se puede exceder un tiempo de gracia, con aviso. El duro no: la escritura falla. Usamos
-solo el duro porque queremos un tope, no una advertencia.
+**¿Por qué LVM y no una partición?** Un LV se agranda en caliente con `lvextend`, el VG puede sumar
+discos con `vgextend`, y un LV puede ocupar más de un disco. Una partición queda limitada por las
+que tiene al lado y hay que desmontar para tocarla.
 
-**¿Dónde guarda el kernel a qué proyecto pertenece un archivo?**
-En el nodo-i, como un atributo más junto al dueño, los permisos y las direcciones de los bloques.
-La carpeta tiene además una bandera de herencia para que los archivos nuevos nazcan con el mismo
-número.
+**¿Qué diferencia hay entre cuota de usuario, de grupo y de proyecto?** La de usuario limita lo que
+escribe cada persona en todo el sistema de archivos; la de grupo, a los miembros de un grupo; la de
+proyecto, lo que hay dentro de una carpeta sin importar quién lo escribió. Para "la carpeta de
+Finanzas no pasa de 256 MB" sirve la de proyecto.
 
-**¿Por qué hubo que reiniciar?**
-Porque en XFS la contabilidad de cuotas se activa con una opción de montaje y no se puede prender
-en caliente. La raíz se monta al arrancar, así que la opción se pasa por el kernel con
-`rootflags=pquota`. Es un caso concreto de "las opciones se fijan en el montaje".
+**¿Qué es el journaling?** Un registro donde XFS anota los cambios de metadatos antes de hacerlos.
+Tras un corte de luz repasa el journal y deja el sistema de archivos consistente sin revisar todo el
+disco. Por eso el LV es más grande que la cuota: ese journal ocupa lugar.
 
-**¿Qué es un nodo-i y guarda el nombre del archivo?**
-La estructura con los metadatos del archivo: permisos, dueño, tamaño, fechas, direcciones de los
-bloques y, acá, el proyecto. El nombre no: está en el directorio, que asocia nombres con números de
-nodo-i. `ls -i` muestra el número.
+**¿Qué es un inodo y guarda el nombre?** La estructura con los metadatos de un archivo: permisos,
+dueño, tamaño, fechas y dónde están los datos. El nombre no: está en el directorio, que asocia
+nombres con números de inodo. Un disco se puede quedar sin inodos con espacio libre (`df -i`).
 
-**¿Se puede quedar un disco sin lugar teniendo espacio libre?**
-Sí, si se acaban los nodos-i. Se ve con `df -i`. La cuota de XFS también puede limitar la cantidad
-de nodos-i (`ihard`), no solo los bloques.
-
-**¿Qué pasa si se llena la partición raíz entera?**
-Las cuotas evitan que un departamento lo haga solo, pero si todos juntos llenan el disco, el
-sistema se queda sin espacio. Por eso una versión más robusta pondría los departamentos en un
-volumen separado. Lo dejamos fuera a propósito: la unidad no pide LVM ni crear particiones, y la VM
-del laboratorio no permite agregar discos.
-
-**¿Qué es el journaling y qué tiene que ver acá?**
-XFS anota en una bitácora lo que va a hacer antes de hacerlo; tras un corte, al arrancar completa o
-descarta lo pendiente. La contabilidad de cuotas pasa por ese mismo journal, así que después de un
-apagón los contadores quedan consistentes. Se ve la sección `log` con `xfs_info /`.
-
-**¿Por qué el límite se aplica al escribir y no al abrir el archivo?**
-Porque lo que se limita son bloques, y los bloques se asignan cuando se escribe. Abrir no consume
-espacio. La unidad lo dice: la verificación ocurre "cada vez que se agrega un bloque a un archivo".
-
-**¿Qué significa el 2 en `chmod 2770`?**
-El bit SGID en un directorio: lo que se cree adentro hereda el grupo del directorio en vez del
-grupo de quien lo creó. Así los archivos quedan compartidos por el departamento sin intervención.
+**¿Qué pasa si se reinicia la VM?** El loop device no se reconecta solo, por eso fstab lleva
+`nofail` y la VM arranca igual. Volver a correr el script reconecta, activa el VG y monta. En
+producción el PV sería un disco real y no haría falta.
 
 ---
 
 ## Si algo falla en vivo
 
-| Síntoma | Causa probable | Qué hacer |
-|---|---|---|
-| El script dice que `/` no está montado con cuotas | Falta `rootflags=pquota` o no se reinició | Mostrar `findmnt -no OPTIONS /`; no se puede arreglar sin reiniciar: explicar y pasar al paso 4 con capturas del ensayo |
-| `dd` escribe los 400 MB sin cortar | Lo mismo: cuota no activa, o la carpeta no quedó marcada | `sudo xfs_quota -x -c "report -p -h" /`; si no aparece finanzas, repetir el script |
-| El script dice que el grupo no existe | No corrió `simular_depto.sh` | `sudo src/demo/simular_depto.sh finanzas` |
-| `xfs_quota: cannot set limits: Function not implemented` | Montado sin `prjquota` | Igual que la primera fila |
-| `Permission denied` al escribir como `lperez` | La carpeta quedó con otro grupo | `ls -ld /srv/finanzas`; `sudo chown root:finanzas /srv/finanzas` |
+| Síntoma | Qué hacer sin perder la demo |
+|---|---|
+| El script dice que el grupo no existe | `sudo src/demo/simular_depto.sh finanzas` y repetir |
+| `dd` corta con `No space left on device` | Decir que el LV quedó sin margen y mostrar igual el reporte de cuota; revisar `mount \| grep srv` después |
+| `lvextend` dice que no hay espacio en el VG | Quedaron LV de otro ensayo: `sudo lvs`; revocar los sobrantes |
+| `/srv/finanzas` no está montado al empezar | La VM se reinició: correr el script de nuevo, reconecta en segundos |
+| `mount -a` da error | Hay una línea rota en fstab: `cat /etc/fstab`, corregir con `sudo vi`, repetir |
 
 ---
 
-## Después de la presentación: dejar la VM como estaba
+## Parte D — Dejar la VM como estaba
 
 ```bash
-sudo src/revocar.sh --depto finanzas --si
+for d in finanzas marketing rrhh legales; do sudo src/revocar.sh --depto "$d" --si 2>/dev/null; done
 ```
 
-Quita la cuota, borra `/srv/finanzas` con sus datos, y elimina usuarios y grupo. El parámetro
-`rootflags=pquota` queda en grub; no molesta y evita el reinicio la próxima vez. Para sacarlo:
+`revocar.sh` borra el LV, la línea de fstab, la cuota y la carpeta de cada departamento. El VG y el
+disco simulado son compartidos; para empezar de cero del todo:
 
 ```bash
-sudo grubby --update-kernel=ALL --remove-args="rootflags=pquota"
+sudo vgremove -y vg_pagosur
+sudo pvremove -y "$(losetup -j /var/discos/pagosur.img | cut -d: -f1)"
+sudo losetup -d "$(losetup -j /var/discos/pagosur.img | cut -d: -f1)"
+sudo rm /var/discos/pagosur.img
 ```
+
+Verificar con `sudo vgs; losetup -a; grep srv /etc/fstab`: todo vacío.
