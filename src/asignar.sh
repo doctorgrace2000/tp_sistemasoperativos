@@ -64,5 +64,7 @@ bash "$DIR/modulos/03_memoria.sh"        "$DEPTO" "$RAM_MB"
 
 # 2. Monitor: no se lanza desde acá. Se demuestra solo, en su propia terminal:
 #    sudo src/modulos/02_monitor.sh finanzas 50
+# 5. Entrada/Salida: tampoco. Es un relevamiento que solo lee, no instala nada:
+#    sudo src/modulos/05_dispositivos.sh 5
 
 log "FIN alta depto=$DEPTO"
