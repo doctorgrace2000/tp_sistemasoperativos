@@ -44,9 +44,8 @@ for f in /etc/security/limits.d/depto-"$DEPTO"-*.conf; do
 done
 
 # 2. Almacenamiento (Ej. 4): sacar la cuota de proyecto y borrar la carpeta.
-#    Los pasos de umount/fstab/LV actúan si el depto se creó con la versión
-#    principal (04_almacenamiento.sh, LVM); con la alternativa sobre /
-#    (04_almacenamiento_simple.sh) se saltean.
+#    Desmonta el volumen del depto, lo saca de fstab y borra su LV (los crea
+#    04_almacenamiento.sh). Cada paso se saltea si ya no existe.
 if grep -q "^$DEPTO:" /etc/projid 2>/dev/null; then
     FS=$(findmnt -no TARGET --target /srv)
     xfs_quota -x -c "limit -p bhard=0 bsoft=0 $DEPTO" "$FS" 2>/dev/null || true

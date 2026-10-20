@@ -51,7 +51,7 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `03_memoria.sh` | **Implementado en macOS, NUNCA ejecutado en Linux.** Hay que probarlo en la VM |
 | Ej. 3 `03_carga_ram.c` | Hecho. Falta compilarlo en la VM |
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
-| Ej. 4 `04_almacenamiento.sh` | **Vuelve a ser la versión LVM** (2026-10-20, Tatiana): la versión simple sobre la raíz no funcionó en la VM y quedó como alternativa en `04_almacenamiento_simple.sh` (guion `docs/demo_04_simple.md`). Probado en la VM el 2026-10-14: crea disco, PV, VG, LV, fstab y cuota sin errores, pero con LV +25 % el XFS dejaba 238 MB libres para una cuota de 256 MB; corregido a LV +50 % (384 MB) y disco simulado de 1,5 GB. Falta re-probar con esos tamaños. Guion: `docs/demo_04_almacenamiento.md`; informe `docs/informe/04_almacenamiento.md` |
+| Ej. 4 `04_almacenamiento.sh` | **Vuelve a ser la versión LVM** (2026-10-20, Tatiana): la versión simple sobre la raíz no funcionó en la VM y se eliminó (queda en el historial de git, commit 8041c22). Probado en la VM el 2026-10-14: crea disco, PV, VG, LV, fstab y cuota sin errores, pero con LV +25 % el XFS dejaba 238 MB libres para una cuota de 256 MB; corregido a LV +50 % (384 MB) y disco simulado de 1,5 GB. Falta re-probar con esos tamaños. Guion: `docs/demo_04_almacenamiento.md`; informe `docs/informe/04_almacenamiento.md` |
 | Ej. 5 `05_dispositivos.sh` + `docs/informe/05_entrada_salida.md` | Implementado (tema elegido 2026-10-15: dispositivos, drivers e interrupciones; simplificado 2026-10-19 para no salirse del PDF de la unidad). Probado en la VM del lab el 2026-10-19: reposo 0,8 interrupciones/s, con el `dd` de lectura 142,4/s. Falta guardar las capturas en `docs/informe/capturas/` |
 | Ej. 6 `06_seguridad.sh` | **Rediseñado el 2026-10-17**: alta de grupo y usuarios del CSV + bloqueo de puertos TCP de salida (SMTP 25/465/587, FTP 21, Telnet 23) para los procesos del grupo, con una tabla nftables por depto (`meta skgid`, gancho output). Sin sudoers, ACL ni roles. Sin probar en la VM. README e informe pendientes |
 
@@ -142,7 +142,7 @@ sudo dd if=/dev/vda of=/dev/null bs=1M iflag=direct status=progress
 Esperado: 4 dispositivos de ejemplo (disco, partición, terminal, /dev/null) y las interrupciones
 por segundo del disco: pocas en reposo, cientos con el `dd`.
 
-Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md` (LVM; la alternativa simple en `docs/demo_04_simple.md`).
+Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md`.
 
 ## Cómo trabaja el autor con Claude
 
