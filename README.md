@@ -49,7 +49,7 @@ defender cualquier ejercicio** con la teoría de su unidad (puntos 6 y 16). Por 
 | 2 | Procesos | Un usuario deja un proceso colgado consumiendo CPU. El monitor lo detecta, le baja la prioridad y si reincide lo termina; reporta zombies | `ps`, `top`, `pstree`, `renice`, `kill` | Script | Estados, PCB, señales, zombies |
 | 3 | Memoria | Ningún proceso de un usuario del departamento puede pedir más de 1 GB; `malloc` falla solo en ese proceso y el servidor sigue | `limits.conf`, `ulimit -v`, `free`, `vmstat`, `pmap` | Script + C (malloc en loop) | Memoria virtual, paginación, swap, OOM killer |
 | 4 | Almacenamiento | Carpeta del departamento sobre un volumen lógico XFS, montaje persistente y cuota de proyecto de 256 MB; extensión a demanda a mano | `losetup`, `pvcreate`, `vgcreate`, `lvcreate`, `mkfs.xfs`, `fstab`, `xfs_quota`, `lvextend` | Script | Sistemas de archivos, inodos, journaling, LVM |
-| 5 | *(a definir)* | Unidad 5 de la materia: ejercicio pendiente de elegir | | | |
+| 5 | Entrada/Salida | El servidor anda lento sin que ningún proceso use CPU. El admin mira cómo conoce el sistema a sus dispositivos (bloque o carácter, número mayor/menor, driver) y cuántas interrupciones por segundo genera el disco, en reposo y con carga | `ls -l /dev`, `stat`, `/proc/devices`, `lsblk`, `/proc/interrupts`, `dd` | Script | Dispositivos de bloque/carácter, controlador y driver, mayor/menor, interrupciones, DMA, capas de E/S |
 | 6 | Seguridad | Alta de usuarios desde CSV, grupo por departamento, permisos por rol, auditor de solo lectura, sudo limitado; SELinux como ejemplo de MAC en la demo | `useradd`, `groupadd`, `chage`, `chmod`, SGID, `setfacl`, `sudoers`, `ls -Z`, `restorecon` | Script | DAC vs MAC, mínimo privilegio |
 
 ## Estructura del proyecto
@@ -84,6 +84,7 @@ tp_sistemasoperativos/
         ├── 03_memoria.sh          # Ej. 3 – memoria máxima por proceso vía limits.d
         ├── 03_carga_ram.c         # Ej. 3 – malloc en loop hasta que falla
         ├── 04_almacenamiento.sh   # Ej. 4 – loop device + LVM + XFS + cuota de proyecto
+        ├── 05_dispositivos.sh     # Ej. 5 – dispositivos, drivers e interrupciones del disco
         └── 06_seguridad.sh        # Ej. 6 – usuarios, permisos, ACL, sudo
 ```
 
@@ -98,7 +99,7 @@ Cada archivo tiene en el encabezado la situación, las herramientas, la demo y u
 | 2. Procesos | `src/modulos/02_monitor.sh`, `docs/informe/02_procesos.md` | |
 | 3. Memoria | `src/modulos/03_memoria.sh`, `03_carga_ram.c`, `docs/informe/03_memoria.md` | |
 | 4. Almacenamiento | `src/modulos/04_almacenamiento.sh`, `docs/informe/04_almacenamiento.md` | |
-| 5. *(a definir)* | | |
+| 5. Entrada/Salida | `src/modulos/05_dispositivos.sh`, `docs/informe/05_entrada_salida.md` | |
 | 6. Seguridad | `src/modulos/06_seguridad.sh`, `docs/informe/06_seguridad.md` | |
 | Orquestador | `src/asignar.sh`, `src/revocar.sh`, `src/lib/log.sh` | |
 

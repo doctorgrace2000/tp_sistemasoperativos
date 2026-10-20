@@ -52,7 +52,7 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `03_carga_ram.c` | Hecho. Falta compilarlo en la VM |
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
 | Ej. 4 `04_almacenamiento.sh` | **Rediseñado el 2026-10-14 a la versión simple**: cuota de proyecto XFS directa sobre `/srv/<depto>` en la partición raíz, sin LVM ni disco simulado. Requiere una sola vez `rootflags=pquota` en grub y reinicio. Sin probar en la VM todavía. La versión LVM quedó en `04_almacenamiento_lvm.sh` y su guion en `docs/demo_04_lvm.md`. **`docs/informe/04_almacenamiento.md` y la tabla del README describen la versión LVM: hay que reescribirlos si el grupo confirma la simple** |
-| Ej. 5 `05_es.sh` | Vacío. Propuesta escrita en `docs/propuesta_05_es.md` (dispositivo dedicado por depto vía regla de udev sobre `ttyS0`; plan B: cola CUPS). **Pendiente de decisión del grupo** |
+| Ej. 5 `05_dispositivos.sh` + `docs/informe/05_entrada_salida.md` | Implementado (tema elegido 2026-10-15: dispositivos, drivers e interrupciones; simplificado 2026-10-19 para no salirse del PDF de la unidad). Probado en la VM del lab el 2026-10-19: reposo 0,8 interrupciones/s, con el `dd` de lectura 142,4/s. Falta guardar las capturas en `docs/informe/capturas/` |
 | Ej. 6 `06_seguridad.sh` | **Rediseñado el 2026-10-17**: alta de grupo y usuarios del CSV + bloqueo de puertos TCP de salida (SMTP 25/465/587, FTP 21, Telnet 23) para los procesos del grupo, con una tabla nftables por depto (`meta skgid`, gancho output). Sin sudoers, ACL ni roles. Sin probar en la VM. README e informe pendientes |
 
 ## Qué hacer en la VM, en este orden
@@ -128,9 +128,19 @@ rechaza las conexiones TCP de salida del grupo a los puertos bloqueados. La demo
 
 ### 6. Ejercicio 5
 
-Hay una propuesta en `docs/propuesta_05_es.md` con tres opciones y una recomendación. No
-implementar hasta que el grupo elija. Si eligen la opción 1, seguir el estilo de `03_memoria.sh`
-y agregar la baja de la regla de udev a `revocar.sh`.
+Tema: dispositivos e interrupciones (Unidad 5, Entrada/Salida). Se mantiene a propósito dentro de lo
+que trae el PDF de la unidad (bloque/carácter, mayor/menor, driver, interrupciones, DMA): nada de
+direcciones PCI ni MSI-X. Solo lee, así que `revocar.sh` no tiene nada que deshacer. Se corre con
+`sudo` solo porque el log es de root. En la VM:
+
+```bash
+sudo ./src/modulos/05_dispositivos.sh 5
+# en otra terminal, ANTES y durante la medición (lectura larga; Ctrl+C para cortarla):
+sudo dd if=/dev/vda of=/dev/null bs=1M iflag=direct status=progress
+```
+
+Esperado: 4 dispositivos de ejemplo (disco, partición, terminal, /dev/null) y las interrupciones
+por segundo del disco: pocas en reposo, cientos con el `dd`.
 
 Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md`.
 
