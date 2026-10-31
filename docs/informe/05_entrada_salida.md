@@ -3,7 +3,7 @@
 **Unidad 5:** Subsistema de entrada/salida (dispositivos, controladores, drivers, interrupciones,
 DMA, capas del software de E/S)
 **Código:** [`src/modulos/05_dispositivos.sh`](../../src/modulos/05_dispositivos.sh) (shell script)
-**Herramientas Red Hat:** `ls -l /dev`, `stat`, `/proc/devices`, `lsblk`, `/proc/interrupts`, `dd`
+**Herramientas Red Hat:** `ls -l /dev`, `stat`, `/proc/devices`, `lsblk`, `/proc/interrupts`, `dd`, `sync`
 
 ---
 
@@ -132,7 +132,15 @@ Hace falta que el disco trabaje **durante** los 5 segundos que mide el script. P
 lectura larga, que tarda varios minutos. En una **segunda terminal**:
 
 ```bash
-sudo dd if=/dev/vda of=/dev/null bs=1M iflag=direct status=progress
+sudo ./src/demo/leer_disco.sh
+```
+
+Es un ayudante de la demo (como `simular_depto.sh`): va aparte del módulo porque el módulo es la
+herramienta del administrador que **mide**, y esto es la carga que tiene que detectar. Por dentro
+corre un solo comando:
+
+```bash
+dd if=/dev/vda of=/dev/null bs=1M iflag=direct status=progress
 ```
 
 - `if=/dev/vda`: lee el disco entero, de a bloques de 1 MB (`bs=1M`).
@@ -152,17 +160,69 @@ bloque. Ese es el "culpable" que buscaba el administrador.
 
 Al terminar, en la segunda terminal cortar el `dd` con **Ctrl+C**.
 
-### Paso 4 – Las interrupciones en vivo (opcional)
+### Paso 4 – Los empleados guardan recibos
+
+El `dd` es una lectura enorme y artificial. En un servidor de archivos lo normal es otra cosa: muchos
+empleados guardando archivos chicos. Para simularlo, un bucle `for` guarda 5000 "recibos" de texto,
+uno por vuelta, y muestra en pantalla cuál va guardando. En la **segunda terminal**:
+
+```bash
+./src/demo/guardar_recibos.sh
+```
+
+Es otro ayudante de la demo. Al terminar (o con **Ctrl+C**) borra los recibos solo. Por dentro, el
+bucle es este:
+
+```bash
+for i in $(seq 1 5000); do
+    echo "recibo $i" > /var/tmp/recibos/recibo_$i.txt
+    sync
+    echo "guardado recibo $i"
+done
+```
+
+- `for i in $(seq 1 5000); do ...; done`: repite lo de adentro 5000 veces, con `i` valiendo 1, 2, 3...
+- `echo "recibo $i" > /var/tmp/recibos/recibo_$i.txt`: crea un archivo de texto de una línea
+  (`recibo_1.txt` contiene `recibo 1`). El `>` manda el texto al archivo en vez de a la pantalla.
+- `sync`: obliga al kernel a escribir **ya** en el disco lo que tiene pendiente (ver "Uso de búfer"
+  en la teoría). Sin esto el disco casi no se entera.
+- `echo "guardado recibo $i"`: muestra el avance en pantalla.
+
+Mientras corre, en la **primera**:
+
+```bash
+sudo ./src/modulos/05_dispositivos.sh 5
+```
+
+Otra vez cientos de interrupciones por segundo (o más): cada `sync` es una escritura real en el disco,
+y cada escritura termina con una interrupción.
+📸 `05_04b_recibos.png`
+
+Para ver un recibo mientras corre: `cat /var/tmp/recibos/recibo_7.txt` (dice `recibo 7`).
+
+**Dos contrastes para entender qué mueve al disco** (se repite la medición con cada uno; el segundo
+se corre con `./src/demo/guardar_recibos.sh 5000 --sin-sync`):
+
+| Bucle | Interrupciones del disco | Por qué |
+|---|---|---|
+| Solo `echo` en pantalla, sin guardar nada | Como en reposo | La pantalla es la terminal (`/dev/pts/0`, de carácter): es E/S, pero de otro dispositivo. |
+| Guarda los recibos pero **sin** `sync` | Casi como en reposo | El kernel deja los datos en un búfer en la RAM y los baja al disco más tarde, todos juntos. |
+| Guarda los recibos **con** `sync` | Cientos o miles por segundo | Cada vuelta obliga a escribir en el disco. |
+
+Medición de referencia (en otra VM Linux con disco virtio): 1,4 por segundo solo imprimiendo, 2,4 sin
+`sync` y 1039 con `sync`.
+
+### Paso 5 – Las interrupciones en vivo (opcional)
 
 ```bash
 watch -d -n1 cat /proc/interrupts
 ```
 
-`-d` resalta lo que cambia cada segundo. Repetir el `dd` del paso 3 y ver crecer la fila `virtio1-req.0` del
+`-d` resalta lo que cambia cada segundo. Repetir el `dd` del paso 3 (o el bucle del paso 4) y ver crecer la fila `virtio1-req.0` del
 disco. Salir con Ctrl+C.
 📸 `05_05_watch.png`
 
-### Paso 5 – Auditoría
+### Paso 6 – Auditoría
 
 ```bash
 grep 'DISPOSITIVOS:' logs/asignador.log
@@ -239,16 +299,23 @@ un instante después.
    hardware                    controlador + DMA + disco
 ```
 
-Cuando `dd` escribe: el proceso pide escribir, el software independiente del dispositivo busca el
+Cuando `dd` lee: el proceso pide leer, el software independiente del dispositivo busca el
 driver por el número mayor, el driver programa al controlador, el controlador copia los datos por
 DMA, y al terminar genera una interrupción que el manejador atiende. Esa interrupción es la que
 cuenta el script.
 
 ### Uso de búfer y spooling
 
-- **Búfer:** memoria donde los datos esperan entre dos partes que van a distinta velocidad. Por eso
-  el `dd` usa `iflag=direct`: sin eso, Linux podría darle bloques que ya tiene copiados en un búfer de
-  la RAM, y el disco no trabajaría.
+- **Búfer:** memoria donde los datos esperan entre dos partes que van a distinta velocidad. Linux usa
+  la RAM libre como búfer del disco, en los dos sentidos:
+  - **Al leer:** guarda copias de lo que ya leyó. Por eso el `dd` usa `iflag=direct`: sin eso, Linux
+    podría darle bloques que ya tiene en la RAM, y el disco no trabajaría.
+  - **Al escribir:** cuando un programa guarda un archivo, el kernel lo deja en la RAM y le contesta
+    "listo" enseguida; lo baja al disco unos segundos después, junto con todo lo demás pendiente.
+    Así muchas escrituras chicas se juntan en pocas grandes. Por eso el bucle del paso 4 sin `sync`
+    casi no mueve las interrupciones. `sync` le ordena al kernel bajar el búfer al disco en ese
+    momento. El costo de esta técnica: si se corta la luz antes de bajarlo, se pierde lo que estaba
+    en la RAM.
 - **Spooling:** para dispositivos que no se pueden compartir, como una impresora, los trabajos se
   dejan en una cola (`/var/spool/cups/` en Red Hat) y un **demonio** los imprime de a uno.
 
@@ -309,6 +376,14 @@ Como son archivos, con permisos: `/dev/vda` solo lo pueden leer root y el grupo 
 **¿Para qué sirve un búfer?**
 Para que dos partes que van a distinta velocidad no tengan que esperarse: los datos quedan guardados
 un momento en memoria.
+
+**En el paso 4, ¿por qué el bucle que solo imprime en pantalla no aumenta las interrupciones del disco?**
+Porque la pantalla es otro dispositivo: la terminal (`/dev/pts/0`, de carácter). Hay E/S, pero no
+pasa por el disco.
+
+**¿Y por qué guardar archivos sin `sync` tampoco las aumenta casi?**
+Por el búfer: el kernel guarda los datos en la RAM y los escribe en el disco más tarde, todos
+juntos. `sync` lo obliga a escribirlos en ese momento, y recién ahí el disco trabaja e interrumpe.
 
 **¿Qué es el spooling?**
 Una forma de compartir un dispositivo que solo puede usar uno a la vez, como una impresora: los
