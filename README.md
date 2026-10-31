@@ -75,7 +75,9 @@ tp_sistemasoperativos/
     ├── asignar.sh                 # alta: valida parámetros y llama a los módulos
     ├── revocar.sh                 # baja: deshace asignar.sh en orden inverso
     ├── demo/
-    │   └── simular_depto.sh       # crea grupo + usuarios del CSV para presentar un módulo solo
+    │   ├── simular_depto.sh       # crea grupo + usuarios del CSV para presentar un módulo solo
+    │   ├── leer_disco.sh          # Ej. 5 – carga: lee el disco entero (dd)
+    │   └── guardar_recibos.sh     # Ej. 5 – carga: guarda recibos con sync
     ├── lib/
     │   └── log.sh                 # función log() compartida (escribe en logs/asignador.log)
     └── modulos/

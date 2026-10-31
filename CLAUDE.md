@@ -135,12 +135,15 @@ direcciones PCI ni MSI-X. Solo lee, así que `revocar.sh` no tiene nada que desh
 
 ```bash
 sudo ./src/modulos/05_dispositivos.sh 5
-# en otra terminal, ANTES y durante la medición (lectura larga; Ctrl+C para cortarla):
-sudo dd if=/dev/vda of=/dev/null bs=1M iflag=direct status=progress
+# en otra terminal, ANTES y durante la medición, una de las dos cargas (Ctrl+C para cortar):
+sudo ./src/demo/leer_disco.sh          # dd de lectura del disco entero
+./src/demo/guardar_recibos.sh          # 5000 archivos chicos con sync (--sin-sync: contraste)
 ```
 
 Esperado: 4 dispositivos de ejemplo (disco, partición, terminal, /dev/null) y las interrupciones
-por segundo del disco: pocas en reposo, cientos con el `dd`.
+por segundo del disco: pocas en reposo, cientos con cualquiera de las dos cargas, y casi nada con
+`--sin-sync` (el kernel junta las escrituras en el búfer). Las cargas van en `src/demo/` y no en el
+módulo a propósito: el módulo mide, la carga es la situación a detectar.
 
 Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md`.
 
