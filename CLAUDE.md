@@ -52,7 +52,7 @@ Reglas de diseño que NO hay que romper (están justificadas en el README y en l
 | Ej. 3 `03_carga_ram.c` | Hecho. Falta compilarlo en la VM |
 | Ej. 3 `docs/informe/03_memoria.md` | No existe |
 | Ej. 4 `04_almacenamiento.sh` | **Vuelve a ser la versión LVM** (2026-10-20, Tatiana): la versión simple sobre la raíz no funcionó en la VM y se eliminó (queda en el historial de git, commit 8041c22). Probado en la VM el 2026-10-14: crea disco, PV, VG, LV, fstab y cuota sin errores, pero con LV +25 % el XFS dejaba 238 MB libres para una cuota de 256 MB; corregido a LV +50 % (384 MB) y disco simulado de 1,5 GB. Falta re-probar con esos tamaños. Guion: `docs/demo_04_almacenamiento.md`; informe `docs/informe/04_almacenamiento.md` |
-| Ej. 5 `05_dispositivos.sh` + `docs/informe/05_entrada_salida.md` | Implementado (tema elegido 2026-10-15: dispositivos, drivers e interrupciones; simplificado 2026-10-19 para no salirse del PDF de la unidad). Probado en la VM del lab el 2026-10-19: reposo 0,8 interrupciones/s, con el `dd` de lectura 142,4/s. Falta guardar las capturas en `docs/informe/capturas/` |
+| Ej. 5 `05_dispositivos.sh` + `docs/informe/05_entrada_salida.md` | Implementado (tema elegido 2026-10-15: dispositivos, drivers e interrupciones; simplificado 2026-10-19 para no salirse del PDF de la unidad). Probado en la VM del lab (2026-10-19 y 2026-10-31): reposo 0-0,8 interrupciones/s, `dd` de lectura 142-167/s, recibos con `sync` 747/s. Sin `sync` da ráfagas impredecibles (búfer), por eso no se usa en la demo. Falta guardar las capturas en `docs/informe/capturas/` |
 | Ej. 6 `06_seguridad.sh` | **Rediseñado el 2026-10-17**: alta de grupo y usuarios del CSV + bloqueo de puertos TCP de salida (SMTP 25/465/587, FTP 21, Telnet 23) para los procesos del grupo, con una tabla nftables por depto (`meta skgid`, gancho output). Sin sudoers, ACL ni roles. Sin probar en la VM. README e informe pendientes |
 
 ## Qué hacer en la VM, en este orden
@@ -137,12 +137,12 @@ direcciones PCI ni MSI-X. Solo lee, así que `revocar.sh` no tiene nada que desh
 sudo ./src/modulos/05_dispositivos.sh 5
 # en otra terminal, ANTES y durante la medición, una de las dos cargas (Ctrl+C para cortar):
 sudo ./src/demo/leer_disco.sh          # dd de lectura del disco entero
-./src/demo/guardar_recibos.sh          # 5000 archivos chicos con sync (--sin-sync: contraste)
+./src/demo/guardar_recibos.sh          # 5000 archivos chicos, cada uno con sync
 ```
 
 Esperado: 4 dispositivos de ejemplo (disco, partición, terminal, /dev/null) y las interrupciones
-por segundo del disco: pocas en reposo, cientos con cualquiera de las dos cargas, y casi nada con
-`--sin-sync` (el kernel junta las escrituras en el búfer). Las cargas van en `src/demo/` y no en el
+por segundo del disco: pocas en reposo, cientos con cualquiera de las dos cargas. El `sync` es
+necesario: sin él el kernel junta las escrituras en el búfer y las baja en ráfagas impredecibles. Las cargas van en `src/demo/` y no en el
 módulo a propósito: el módulo mide, la carga es la situación a detectar.
 
 Guiones de demo listos: `docs/demo_03_memoria.md` y `docs/demo_04_almacenamiento.md`.
